@@ -104,10 +104,10 @@ function import_server (bus, options)
             // Make a temporary client bus
             var cbus = bus.bus_for_http_client(req, res)
 
-            // Do the fetch
+            // Do the get
             cbus.honk = 'statelog'
             var singleton = req.path.match(/^\/code\//)
-            cbus.fetch_once(req.path.substr(1), (o) => {
+            cbus.get_once(req.path.substr(1), (o) => {
                 var unwrap = (Object.keys(o).length === 2
                               && '_' in o
                               && typeof o._ === 'string')
@@ -127,8 +127,8 @@ function import_server (bus, options)
 
             // This whitelists anything we don't have a specific handler for,
             // reflecting it to all clients!
-            if (count === 0 && method === 'to_save') {
-                bus.save.fire(arg, opts)
+            if (count === 0 && method === 'to_set') {
+                bus.set.fire(arg, opts)
                 count++
             }
 
@@ -159,7 +159,7 @@ function import_server (bus, options)
                           remoteAddress: req.connection.remoteAddress},
                          bus)
         bus.options.client(cbus)
-        cbus.save({key: 'current_user', client: req.client})
+        cbus.set({key: 'current_user', client: req.client})
         return cbus
     },
 
@@ -209,7 +209,7 @@ function import_server (bus, options)
                         bus.port = next_port_attempt
                         return result
                     } catch (e) {
-                        if (next_port_attempt < 3006) next_port_attempt = 3006
+                        if (next_port_attempt < 3007) next_port_attempt = 3007
                         else next_port_attempt++
                     }
             }
@@ -261,8 +261,8 @@ function import_server (bus, options)
         // var client_busses = {}  // XXX work in progress
         var log = master.log
         if (client_bus_func) {
-            master.save({key: 'connections'}) // Clean out old sessions
-            var connections = master.fetch('connections')
+            master.set({key: 'connections'}) // Clean out old sessions
+            var connections = master.get('connections')
         }
         var s = require('sockjs').createServer({
             sockjs_url: 'https://cdn.jsdelivr.net/sockjs/0.3.4/sockjs.min.js',
@@ -281,7 +281,7 @@ function import_server (bus, options)
 
                 connections[conn.id] = {client: conn.id, // client is deprecated
                                         id: conn.id}
-                master.save(connections)
+                master.set(connections)
 
                 var client = require('./statebus')()
                 client.label = 'client' + client_num++
@@ -291,15 +291,15 @@ function import_server (bus, options)
             } else
                 var client = master
 
-            var our_fetches_in = {}  // Every key that this socket has fetched
+            var our_getes_in = {}  // Every key that this socket has geted
             log('sockjs_s: New connection from', conn.remoteAddress)
             function sockjs_pubber (obj, t) {
                 // log('sockjs_pubber:', obj, t)
-                var msg = {save: obj}
+                var msg = {set: obj}
                 if (t.version) msg.version = t.version
                 if (t.parents) msg.parents = t.parents
                 if (t.patch)   msg.patch =   t.patch
-                if (t.patch)   msg.save    = msg.save.key
+                if (t.patch)   msg.set    = msg.set.key
                 msg = JSON.stringify(msg)
 
                 if (global.network_delay) {
@@ -318,16 +318,16 @@ function import_server (bus, options)
                     var method = bus.message_method(message)
 
                     // Validate the message
-                    if (!((method === 'fetch'
-                           && master.validate(message, {fetch: 'string',
+                    if (!((method === 'get'
+                           && master.validate(message, {get: 'string',
                                                         '?parent': 'string', '?version': 'string'}))
                           ||
-                          (method === 'save'
-                           && master.validate(message, {save: '*',
+                          (method === 'set'
+                           && master.validate(message, {set: '*',
                                                         '?parents': 'array', '?version': 'string', '?patch': 'array'})
-                           && (typeof(message.save) === 'string'
-                               || (typeof(message.save) === 'object'
-                                   && typeof(message.save.key === 'string'))))
+                           && (typeof(message.set) === 'string'
+                               || (typeof(message.set) === 'object'
+                                   && typeof(message.set.key === 'string'))))
                           ||
                           (method === 'forget'
                            && master.validate(message, {forget: 'string'}))
@@ -344,55 +344,55 @@ function import_server (bus, options)
                 }
 
                 switch (method) {
-                case 'fetch':
-                    our_fetches_in[message.fetch] = true
-                    client.fetch(message.fetch, sockjs_pubber)
+                case 'get':
+                    our_getes_in[message.get] = true
+                    client.get(message.get, sockjs_pubber)
                     break
                 case 'forget':
-                    delete our_fetches_in[message.forget]
+                    delete our_getes_in[message.forget]
                     client.forget(message.forget, sockjs_pubber)
                     break
                 case 'delete':
                     client.delete(message['delete'])
                     break
-                case 'save':
+                case 'set':
                     message.version = message.version || client.new_version()
                     if (message.patch) {
-                        var o = bus.cache[message.save] || {key: message.save}
+                        var o = bus.cache[message.set] || {key: message.set}
                         try {
-                            message.save = bus.apply_patch(o, message.patch[0])
+                            message.set = bus.apply_patch(o, message.patch[0])
                         } catch (e) {
                             console.error('Received bad sockjs message from '
                                           + conn.remoteAddress +': ', message, e)
                             return
                         }
                     }
-                    client.save(message.save,
+                    client.set(message.set,
                                 {version: message.version,
                                  parents: message.parents,
                                  patch: message.patch})
-                    if (our_fetches_in[message.save.key]) {  // Store what we've seen if we
+                    if (our_getes_in[message.set.key]) {  // Store what we've seen if we
                                                              // might have to publish it later
-                        client.log('Adding', message.save.key+'#'+message.version,
+                        client.log('Adding', message.set.key+'#'+message.version,
                                    'to pubber!')
-                        sockjs_pubber.has_seen(client, message.save.key, message.version)
+                        sockjs_pubber.has_seen(client, message.set.key, message.version)
                     }
                     break
                 }
 
-                // validate that our fetches_in are all in the bus
-                for (var key in our_fetches_in)
-                    if (!client.fetches_in.has(key, master.funk_key(sockjs_pubber)))
+                // validate that our getes_in are all in the bus
+                for (var key in our_getes_in)
+                    if (!client.getes_in.has(key, master.funk_key(sockjs_pubber)))
                         console.trace("***\n****\nFound errant key", key,
                                       'when receiving a sockjs', method, 'of', message)
                 //log('sockjs_s: done with message')
             })
             conn.on('close', function() {
                 log('sockjs_s: disconnected from', conn.remoteAddress, conn.id, client.id)
-                for (var key in our_fetches_in)
+                for (var key in our_getes_in)
                     client.forget(key, sockjs_pubber)
                 if (client_bus_func) {
-                    delete connections[conn.id]; master.save(connections)
+                    delete connections[conn.id]; master.set(connections)
                     client.delete_bus()
                 }
             })
@@ -401,9 +401,9 @@ function import_server (bus, options)
             if (client_bus_func && !master.options.__secure) {
 
                 // A connection
-                client('connection/*').to_fetch = function (key, star) {
+                client('connection/*').to_get = function (key, star) {
                     var id = star
-                    var conn = master.fetch('connections')[id]
+                    var conn = master.get('connections')[id]
                     if (!conn) return {error: 'connection ' + id + ' does not exist'}
 
                     var result = master.clone(conn)
@@ -412,16 +412,16 @@ function import_server (bus, options)
                     result.client = id   // Deprecated
 
                     if (master.options.connections.include_users && result.user)
-                        result.user = client.fetch(result.user.key)
+                        result.user = client.get(result.user.key)
                     return result
                 }
-                client('connection/*').to_save = function (o, star, t) {
+                client('connection/*').to_set = function (o, star, t) {
                     // Check permissions before editing
                     if (star !== conn.id && !master.options.connections.edit_others) {
                         t.abort()
                         return
                     }
-                    var connections = master.fetch('connections')
+                    var connections = master.get('connections')
                     var result = client.clone(o)
                     var old = connections[star]
                     delete result.key
@@ -429,32 +429,32 @@ function import_server (bus, options)
                     result.client = star   // Deprecated
                     result.user = old.user
                     connections[star] = result
-                    master.save(connections)
+                    master.set(connections)
                 }
 
                 // Your connection
-                client('connection').to_fetch = function () {
+                client('connection').to_get = function () {
                     // subscribe to changes in authentication
-                    client.fetch('current_user')
+                    client.get('current_user')
 
-                    var result = client.clone(client.fetch('connection/' + conn.id))
+                    var result = client.clone(client.get('connection/' + conn.id))
                     delete result.key
                     return result
                 }
-                client('connection').to_save = function (o) {
+                client('connection').to_set = function (o) {
                     o = client.clone(o)
                     o.key = 'connection/' + conn.id
-                    client.save(o)
+                    client.set(o)
                 }
 
                 // All connections
-                client('connections').to_save = function noop (t) {t.abort()}
-                client('connections').to_fetch = function () {
+                client('connections').to_set = function noop (t) {t.abort()}
+                client('connections').to_get = function () {
                     var result = []
-                    var conns = master.fetch('connections')
+                    var conns = master.get('connections')
                     for (var connid in conns)
                         if (connid !== 'key')
-                            result.push(client.fetch('connection/' + connid))
+                            result.push(client.get('connection/' + connid))
                     
                     return {all: result}
                 }
@@ -492,7 +492,7 @@ function import_server (bus, options)
         var fs = require('fs')
         var db = {}
         var db_is_ok = false
-        var pending_save = null
+        var pending_set = null
         var active
         function file_store (prefix, delay_activate) {
             prefix = prefix || bus.options.file_store.prefix
@@ -505,9 +505,9 @@ function import_server (bus, options)
                     (fs.writeFileSync(filename, '{}'), bus.log('Made a new db file'))
                 db = JSON.parse(fs.readFileSync(filename))
                 db_is_ok = true
-                // If we save before anything else is connected, we'll get this
+                // If we set before anything else is connected, we'll get this
                 // into the cache but not affect anything else
-                bus.save.fire(global.pointerify ? inline_pointers(db) : db)
+                bus.set.fire(global.pointerify ? inline_pointers(db) : db)
                 bus.log('Read db')
             } catch (e) {
                 console.error(e)
@@ -515,10 +515,10 @@ function import_server (bus, options)
             }
 
             // Saving db
-            function save_db() {
+            function set_db() {
                 if (!db_is_ok) return
 
-                console.time('saved db')
+                console.time('setd db')
 
                 fs.writeFile(filename+'.tmp', JSON.stringify(db, null, 1), function(err) {
                     if (err) {
@@ -530,15 +530,15 @@ function import_server (bus, options)
                                 console.error('Crap !! DB IS DYING !!!!', err)
                                 db_is_ok = false
                             } else {
-                                console.timeEnd('saved db')
-                                pending_save = null
+                                console.timeEnd('setd db')
+                                pending_set = null
                             }
                         })
                 })
             }
 
             function save_later() {
-                pending_save = pending_save || setTimeout(save_db, bus.options.file_store.save_delay)
+                pending_set = pending_set || setTimeout(set_db, bus.options.file_store.save_delay)
             }
             active = !delay_activate
 
@@ -561,12 +561,12 @@ function import_server (bus, options)
                     else return o
                 })
             }
-            function on_save (obj) {
+            function on_set (obj) {
                 db[obj.key] = global.pointerify ? abstract_pointers(obj) : obj
                 if (active) save_later()
             }
-            on_save.priority = true
-            bus(prefix).on_save = on_save
+            on_set.priority = true
+            bus(prefix).on_set = on_set
             bus(prefix).to_delete = function (key) {
                 delete db[key]
                 if (active) save_later()
@@ -582,11 +582,11 @@ function import_server (bus, options)
                     process.stderr.write("Uncaught Exception:\n");
                     process.stderr.write(e.stack + "\n");
                 }
-                if (pending_save) {
+                if (pending_set) {
                     console.log('Saving db after crash')
                     console.time()
                     fs.writeFileSync(filename, JSON.stringify(db, null, 1))
-                    console.log('Saved db after crash')
+                    console.log('Setd db after crash')
                 }
                 process.exit(1)
             }
@@ -633,17 +633,17 @@ function import_server (bus, options)
             return decodeURIComponent(k.replace('%2E', '.'))
         }
 
-        bus(prefix).to_fetch = function (key, t) {
+        bus(prefix).to_get = function (key, t) {
             firebase_ref.child(encode_firebase_key(key)).on('value', function (x) {
                 t.done(x.val() || {})
             }, function (err) { t.abort() })
         }
 
-        bus(prefix).on_save = function (o) {
+        bus(prefix).on_set = function (o) {
             firebase_ref.child(encode_firebase_key(o.key)).set(o)
         }
 
-        // bus(prefix).to_save = function (o, t) {
+        // bus(prefix).to_set = function (o, t) {
         //     firebase_ref.child(encode_firebase_key(o.key)).set(o, (err) => {
         //         err ? t.abort() : t.done()
         //     })
@@ -678,19 +678,19 @@ function import_server (bus, options)
             console.error('Bad sqlite db')
         }
 
-        // Add fetch handler
-        bus(prefix).to_fetch = function (key, t) {
+        // Add get handler
+        bus(prefix).to_get = function (key, t) {
             var x = db.prepare('select * from cache where key = ?').get([key])
             t.done(x ? JSON.parse(x.obj) : {})
         }
 
-        // Add save handlers
-        function on_save (obj) {
+        // Add set handlers
+        function on_set (obj) {
             db.prepare('replace into cache (key, obj) values (?, ?)').run(
                 [obj.key, JSON.stringify(obj)])
         }
-        on_save.priority = true
-        bus(prefix).on_save = on_save
+        on_set.priority = true
+        bus(prefix).on_set = on_set
 
         bus(prefix).to_delete = function (key) {
             db.prepare('delete from cache where key = ?').run([key])
@@ -720,7 +720,7 @@ function import_server (bus, options)
             1000 * 60 // Every minute
         )
     },
-    fast_load_sqlite_store: function sqlite_store (opts) { // just one line different from sqlite_store (bus.save.fire replaced)
+    fast_load_sqlite_store: function sqlite_store (opts) { // just one line different from sqlite_store (bus.set.fire replaced)
         var prefix = '*'
         var open_transaction = null
 
@@ -745,7 +745,7 @@ function import_server (bus, options)
 
             for (var key in temp_db)
                 if (temp_db.hasOwnProperty(key)){
-                    // bus.save.fire(temp_db[key])
+                    // bus.set.fire(temp_db[key])
                     bus.cache[key] = temp_db[key]
                     temp_db[key] = undefined
                 }
@@ -755,13 +755,13 @@ function import_server (bus, options)
             console.error('Bad sqlite db')
         }
 
-        // Add save handlers
-        function on_save (obj) {
+        // Add set handlers
+        function on_set (obj) {
             if (global.pointerify)
                 obj = abstract_pointers(obj)
 
             if (opts.use_transactions && !open_transaction){
-                console.time('save db')
+                console.time('set db')
                 db.prepare('BEGIN TRANSACTION').run()
             }
 
@@ -774,24 +774,24 @@ function import_server (bus, options)
                     console.log('Committing transaction to database')
                     db.prepare('COMMIT').run()
                     open_transaction = false
-                    console.timeEnd('save db')
+                    console.timeEnd('set db')
                 })
             }
 
         }
-        if (opts.save_sync) {
+        if (opts.set_sync) {
             var old_route = bus.route
             bus.route = function (key, method, arg, t) {
-                if (method === 'to_save') on_save(arg)
+                if (method === 'to_set') on_set(arg)
                 return old_route(key, method, arg, t)
             }
         } else {
-            on_save.priority = true
-            bus(prefix).on_save = on_save
+            on_set.priority = true
+            bus(prefix).on_set = on_set
         }
         bus(prefix).to_delete = function (key) {
             if (opts.use_transactions && !open_transaction){
-                console.time('save db')
+                console.time('set db')
                 db.prepare('BEGIN TRANSACTION').run()
             }
             db.prepare('delete from cache where key = ?').run([key])
@@ -800,7 +800,7 @@ function import_server (bus, options)
                     console.log('committing')
                     db.prepare('COMMIT').run()
                     open_transaction = false
-                    console.timeEnd('save db')
+                    console.timeEnd('set db')
                 })
         }
 
@@ -873,7 +873,7 @@ function import_server (bus, options)
 
             for (var key in temp_db)
                 if (temp_db.hasOwnProperty(key)){
-                    bus.save.fire(temp_db[key])
+                    bus.set.fire(temp_db[key])
                     temp_db[key] = undefined
                 }
             bus.log('Read ' + opts.filename)
@@ -882,13 +882,13 @@ function import_server (bus, options)
             console.error('Bad sqlite db')
         }
 
-        // Add save handlers
-        function on_save (obj) {
+        // Add set handlers
+        function on_set (obj) {
             if (global.pointerify)
                 obj = abstract_pointers(obj)
 
             if (opts.use_transactions && !open_transaction){
-                console.time('save db')
+                console.time('set db')
                 db.prepare('BEGIN TRANSACTION').run()
             }
 
@@ -901,24 +901,24 @@ function import_server (bus, options)
                     console.log('Committing transaction to database')
                     db.prepare('COMMIT').run()
                     open_transaction = false
-                    console.timeEnd('save db')
+                    console.timeEnd('set db')
                 })
             }
 
         }
-        if (opts.save_sync) {
+        if (opts.set_sync) {
             var old_route = bus.route
             bus.route = function (key, method, arg, t) {
-                if (method === 'to_save') on_save(arg)
+                if (method === 'to_set') on_set(arg)
                 return old_route(key, method, arg, t)
             }
         } else {
-            on_save.priority = true
-            bus(prefix).on_save = on_save
+            on_set.priority = true
+            bus(prefix).on_set = on_set
         }
         bus(prefix).to_delete = function (key) {
             if (opts.use_transactions && !open_transaction){
-                console.time('save db')
+                console.time('set db')
                 db.prepare('BEGIN TRANSACTION').run()
             }
             db.prepare('delete from cache where key = ?').run([key])
@@ -927,7 +927,7 @@ function import_server (bus, options)
                     console.log('committing')
                     db.prepare('COMMIT').run()
                     open_transaction = false
-                    console.timeEnd('save db')
+                    console.timeEnd('set db')
                 })
         }
 
@@ -984,12 +984,12 @@ function import_server (bus, options)
         try {
             var db = new require('pg-native')()
             bus.pg_db = db
-            bus.pg_save = pg_save
+            bus.pg_set = pg_set
             db.connectSync(opts.url)
             db.querySync('create table if not exists store (key text primary key, value jsonb)')
 
             var rows = db.querySync('select * from store')
-            rows.forEach(r => bus.save(inline_pointers(r.value, bus)))
+            rows.forEach(r => bus.set(inline_pointers(r.value, bus)))
 
             bus.log('Read ' + opts.url)
         } catch (e) {
@@ -997,16 +997,16 @@ function import_server (bus, options)
             console.error('Bad pg db')
         }
 
-        // Add save handlers
-        function pg_save (obj) {
+        // Add set handlers
+        function pg_set (obj) {
             obj = abstract_pointers(obj)
 
             db.querySync('insert into store (key, value) values ($1, $2) '
                          + 'on conflict (key) do update set value = $2',
                          [obj.key, JSON.stringify(obj)])
         }
-        pg_save.priority = true
-        bus(opts.prefix).on_save = pg_save
+        pg_set.priority = true
+        bus(opts.prefix).on_set = pg_set
         bus(opts.prefix).to_delete = function (key) {
             db.query('delete from store where key = $1', [key])
         }
@@ -1067,8 +1067,8 @@ function import_server (bus, options)
         bus.usage_log_nots = nots
 
         // Aggregate all accesses by day, to get daily active users
-        bus('usage').to_fetch = () => {
-            bus.fetch('time/' + refresh_interval)
+        bus('usage').to_get = () => {
+            bus.get('time/' + refresh_interval)
             var days = []
             var last_day
             for (var row of db.prepare('select * from usage where '
@@ -1106,8 +1106,8 @@ function import_server (bus, options)
             return {_: days}
         }
 
-        bus('recent_hits/*').to_fetch = (rest) => {
-            bus.fetch('time/' + refresh_interval)
+        bus('recent_hits/*').to_get = (rest) => {
+            bus.get('time/' + refresh_interval)
             var result = []
             for (var row of db.prepare('select * from usage where '
                                        + nots + ' order by date desc limit ?').iterate(
@@ -1122,8 +1122,8 @@ function import_server (bus, options)
             return {_: result}
         }
 
-        bus('recent_referers/*').to_fetch = (rest) => {
-            bus.fetch('time/' + refresh_interval)
+        bus('recent_referers/*').to_get = (rest) => {
+            bus.get('time/' + refresh_interval)
             var result = []
             for (var row of db.prepare('select * from usage where '
                                        + nots + ' order by date desc limit ?').iterate(
@@ -1171,7 +1171,7 @@ function import_server (bus, options)
             return times
         }
 
-        bus('socket_load_times').to_fetch = () => {
+        bus('socket_load_times').to_get = () => {
             return {_: sock_open_times()}
         }
     },
@@ -1183,17 +1183,17 @@ function import_server (bus, options)
     },
 
     serve_time () {
-        if (bus('time*').to_fetch.length > 0)
+        if (bus('time*').to_get.length > 0)
             // Then it's already installed
             return
 
         // Time ticker
         var timeouts = {}
-        bus('time*').to_fetch =
+        bus('time*').to_get =
             function (key, rest, t) {
                 if (key === 'time') rest = '/1000'
                 timeout = parseInt(rest.substr(1))
-                function f () { bus.save.fire({key: key, time: Date.now()}) }
+                function f () { bus.set.fire({key: key, time: Date.now()}) }
                 timeouts[key] = setInterval(f, timeout)
                 f()
             }
@@ -1251,7 +1251,7 @@ function import_server (bus, options)
                     }
                 }
 
-                bus.save(email)
+                bus.set(email)
             })
         }
     },
@@ -1268,8 +1268,8 @@ function import_server (bus, options)
         //  - Is there security hole if users have a ? or a / in their name?
         //  - Make the master.posts/ state not require /
         //  - Make standard url tools for optional slashes, and ? query params
-        //  - Should a e.g. client to_save abort if it calls save that aborts?
-        //    - e.g. if master('posts*').to_save aborts
+        //  - Should a e.g. client to_set abort if it calls set that aborts?
+        //    - e.g. if master('posts*').to_set aborts
 
         // Helpers
         function get_posts (args) {
@@ -1324,15 +1324,15 @@ function import_server (bus, options)
         // }
 
         // Define state on master
-        if (master('posts_for/*').to_fetch.length === 0) {
+        if (master('posts_for/*').to_get.length === 0) {
             // Get posts for each user
-            master('posts_for/*').to_fetch = (json) => {
+            master('posts_for/*').to_get = (json) => {
                 watch_for_dirt('posts-for/' + json.for)
                 return {_: get_posts(json)}
             }
             // Saving any post will dirty the list for all users mentioned in
             // the post
-            master('post/*').to_save = (old, New, t) => {
+            master('post/*').to_set = (old, New, t) => {
                 // To do: diff the cc, to, and from lists, and only dirty
                 // posts_for people who have been changed
 
@@ -1361,38 +1361,38 @@ function import_server (bus, options)
             return u.name + '@' + opts.domain
         }
         function current_addy () {
-            var c = client.fetch('current_user')
+            var c = client.get('current_user')
             return c.logged_in ? user_addy(c.user) : 'public'
         }
         function is_author (post) {
             var from = post._.from
-            var c = client.fetch('current_user')
+            var c = client.get('current_user')
             return from.includes(current_addy())
         }
         function can_see (post) {
-            var c = client.fetch('current_user')
+            var c = client.get('current_user')
             var allowed = post._.to.concat(post._.cc).concat(post._.from)
             return allowed.includes(current_addy()) || allowed.includes('public')
         }
         var drtbus = master//require('./statebus')()
-        function dirty (key) { drtbus.save({key: 'dirty-'+key, n: Math.random()}) }
-        function watch_for_dirt (key) { drtbus.fetch('dirty-'+key) }
+        function dirty (key) { drtbus.set({key: 'dirty-'+key, n: Math.random()}) }
+        function watch_for_dirt (key) { drtbus.get('dirty-'+key) }
 
-        client('current_email').to_fetch = () => {
+        client('current_email').to_get = () => {
             return {_: current_addy()}
         }
 
         // Define state on client
-        client('posts*').to_fetch = (k, rest) => {
+        client('posts*').to_get = (k, rest) => {
             var args = bus.parse(rest.substr(1))
-            var c = client.fetch('current_user')
+            var c = client.get('current_user')
             args.for = current_addy()
-            var e = master.fetch('posts_for/' + JSON.stringify(args))
-            return {_: master.clone(e._).map(x=>client.fetch(x.key))}
+            var e = master.get('posts_for/' + JSON.stringify(args))
+            return {_: master.clone(e._).map(x=>client.get(x.key))}
         }
 
-        client('post/*').to_fetch = (k) => {
-            var e = master.clone(master.fetch(k))
+        client('post/*').to_get = (k) => {
+            var e = master.clone(master.get(k))
             if (!e._) return {}
             if (!can_see(e))
                 return {}
@@ -1403,7 +1403,7 @@ function import_server (bus, options)
             return e
         }
 
-        client('post/*').to_save = (o, t) => {
+        client('post/*').to_set = (o, t) => {
             if (!(client.validate(o, {key: 'string',
                                      _: {to: 'array',
                                          cc: 'array',
@@ -1421,7 +1421,7 @@ function import_server (bus, options)
                 return
             }
 
-            var c = client.fetch('current_user')
+            var c = client.get('current_user')
 
             // Make sure this user is an author
             var from = o._.from
@@ -1434,7 +1434,7 @@ function import_server (bus, options)
             o = client.clone(o)
             delete o.children
 
-            master.save(o)
+            master.set(o)
             t.done()
         }
 
@@ -1462,21 +1462,21 @@ function import_server (bus, options)
             t.done()
         }
 
-        client('friends').to_fetch = t => {
-            return {_: (master.fetch('users').all||[])
-                    .map(u=>client.fetch('email/' + user_addy(u)))
-                    .concat([client.fetch('email/public')])
+        client('friends').to_get = t => {
+            return {_: (master.get('users').all||[])
+                    .map(u=>client.get('email/' + user_addy(u)))
+                    .concat([client.get('email/public')])
             }
         }
 
-        client('email/*').to_fetch = (rest) => {
+        client('email/*').to_get = (rest) => {
             var m = rest.match(email_regex)
             var result = {address: rest}
             if (rest === 'public') {
                 result.name = 'public'
             }
             else if (m && m[5].toLowerCase() === opts.domain) {
-                result.user = client.fetch('user/' + m[1])
+                result.user = client.get('user/' + m[1])
                 result.name = result.user.name
                 result.pic = result.user.pic
                 result.upgraded = true
@@ -1491,14 +1491,14 @@ function import_server (bus, options)
     },
 
     sqlite_query_server: function sqlite_query_server (db) {
-        var fetch = bus.fetch
-        bus('table_columns/*').to_fetch =
-            function fetch_table_columns (key, rest) {
+        var get = bus.get
+        bus('table_columns/*').to_get =
+            function get_table_columns (key, rest) {
                 if (typeof key !== 'string')
                     console.log(handlers.hash)
                 var table_name = rest
-                var columns = fetch('sql/PRAGMA table_info(' + table_name + ')').rows.slice()
-                var foreign_keys = fetch('table_foreign_keys/' + table_name)
+                var columns = get('sql/PRAGMA table_info(' + table_name + ')').rows.slice()
+                var foreign_keys = get('table_foreign_keys/' + table_name)
                 var column_info = {}
                 for (var i=0;i< columns .length;i++) {
                     var col = columns[i].name
@@ -1515,10 +1515,10 @@ function import_server (bus, options)
             }
 
 
-        bus('table_foreign_keys/*').to_fetch =
+        bus('table_foreign_keys/*').to_get =
             function table_foreign_keys (key, rest) {
                 var table_name = rest
-                var foreign_keys = fetch('sql/PRAGMA foreign_key_list(' + table_name + ')').rows
+                var foreign_keys = get('sql/PRAGMA foreign_key_list(' + table_name + ')').rows
                 var result = {}
                 for (var i=0;i< foreign_keys .length;i++)
                     result[foreign_keys[i].from] = foreign_keys[i]
@@ -1527,26 +1527,26 @@ function import_server (bus, options)
                 return result
             }
 
-        bus('sql/*').to_fetch =
+        bus('sql/*').to_get =
             function sql (key, rest) {
-                fetch('timer/60000')
+                get('timer/60000')
                 var query = rest
                 try { query = JSON.parse(query) }
                 catch (e) { query = {stmt: query, args: []} }
                 
                 db.all(query.stmt, query.args,
                        function (err, rows) {
-                           if (rows) bus.save.fire({key:key, rows: rows})
+                           if (rows) bus.set.fire({key:key, rows: rows})
                            else console.error('Bad sqlite query', key, err)
                        }.bind(this))
             }
     },
 
     sqlite_table_server: function sqlite_table_server(db, table_name) {
-        var save = bus.save, fetch = bus.fetch
-        var table_columns = fetch('table_columns/'+table_name) // This will fail if used too soon
-        var foreign_keys  = fetch('table_foreign_keys/'+table_name)
-        var remapped_keys = fetch('remapped_keys')
+        var set = bus.set, get = bus.get
+        var table_columns = get('table_columns/'+table_name) // This will fail if used too soon
+        var foreign_keys  = get('table_foreign_keys/'+table_name)
+        var remapped_keys = get('remapped_keys')
         remapped_keys.keys = remapped_keys.keys || {}
         remapped_keys.revs = remapped_keys.revs || {}
         function row_json (row) {
@@ -1587,15 +1587,15 @@ function import_server (bus, options)
                 if (err) console.error('Problem with table!', table_name, err)
                 for (var i=0; i<rows.length; i++)
                     result[i] = row_json(rows[i])
-                bus.save.fire({key: table_name, rows: result})
+                bus.set.fire({key: table_name, rows: result})
             })
         }
         function render_row(obj) {
-            bus.save.fire(row_json(obj))
+            bus.set.fire(row_json(obj))
             if (remapped_keys.revs[obj.key]) {
                 var alias = bus.clone(obj)
                 alias.key = remapped_keys.revs[obj.key]
-                bus.save.fire(row_json(alias))
+                bus.set.fire(row_json(alias))
             }
         }
 
@@ -1603,8 +1603,8 @@ function import_server (bus, options)
         // Handlers!
         // ************************
 
-        // Fetching the whole table, or a single row
-        bus(table_name + '*').to_fetch = function (key, rest) {
+        // Geting the whole table, or a single row
+        bus(table_name + '*').to_get = function (key, rest) {
             if (rest === '')
                 // Return the whole table
                 return render_table()
@@ -1624,7 +1624,7 @@ function import_server (bus, options)
         }
 
         // Saving a row
-        bus(table_name + '/*').to_save = function (obj, rest) {
+        bus(table_name + '/*').to_set = function (obj, rest) {
             var columns = table_columns.columns
             var key = remapped_keys.keys[obj.key] || obj.key
 
@@ -1650,7 +1650,7 @@ function import_server (bus, options)
         }
 
         // Inserting a new row
-        bus('new/' + table_name + '/*').to_save = function (obj) {
+        bus('new/' + table_name + '/*').to_set = function (obj) {
             var columns = table_columns.columns
             var stmt = ('insert into ' + table_name + ' (' + columns.join(',')
                         + ') values (' + new Array(columns.length).join('?,') + '?)')
@@ -1663,7 +1663,7 @@ function import_server (bus, options)
                 console.log('insert complete, got id', this.lastID)
                 remapped_keys.keys[obj.key] = table_name + '/' + this.lastID
                 remapped_keys.revs[remapped_keys.keys[obj.key]] = obj.key
-                save(remapped_keys)
+                set(remapped_keys)
                 render_table()
             })
         }
@@ -1693,13 +1693,13 @@ function import_server (bus, options)
         var client = this // to keep me straight while programming
 
         // Initialize master
-        if (master('users/passwords').to_fetch.length === 0) {
-            master('users/passwords').to_fetch = function (k) {
+        if (master('users/passwords').to_get.length === 0) {
+            master('users/passwords').to_get = function (k) {
                 var result = {key: 'users/passwords'}
-                var users = master.fetch('users')
+                var users = master.get('users')
                 users.all = users.all || []
                 for (var i=0; i<users.all.length; i++) {
-                    var u = master.fetch(users.all[i])
+                    var u = master.get(users.all[i])
                     var login = (u.login || u.name).toLowerCase()
                     console.assert(login, 'Missing login for user', u)
                     if (result.hasOwnProperty(login)) {
@@ -1715,9 +1715,9 @@ function import_server (bus, options)
 
         // Authentication functions
         function authenticate (login, pass) {
-            var userpass = master.fetch('users/passwords')[login.toLowerCase()]
+            var userpass = master.get('users/passwords')[login.toLowerCase()]
             master.log('authenticate: we see',
-                master.fetch('users/passwords'),
+                master.get('users/passwords'),
                 userpass && userpass.pass,
                 pass)
 
@@ -1727,7 +1727,7 @@ function import_server (bus, options)
 
             //console.log('comparing passwords', pass, userpass.pass)
             if (require('bcrypt-nodejs').compareSync(pass, userpass.pass))
-                return master.fetch(userpass.user)
+                return master.get(userpass.user)
         }
         function create_account (params) {
             if (typeof (params.login || params.name) !== 'string')
@@ -1739,7 +1739,7 @@ function import_server (bus, options)
                                           '?key': undefined, '*': '*'}))
                 throw 'invalid name, login, pass, or email'
 
-            var passes = master.fetch('users/passwords')
+            var passes = master.get('users/passwords')
             if (passes.hasOwnProperty(login))
                 throw 'there is already a user with that login or name'
 
@@ -1761,29 +1761,29 @@ function import_server (bus, options)
                                email: params.email }
             for (var k in new_account) if (!new_account[k]) delete new_account[k]
 
-            var users = master.fetch('users')
+            var users = master.get('users')
             users.all = users.all || []
             users.all.push(new_account)
             passes[login] = {user: new_account.key, pass: new_account.pass}
-            master.save(users)
-            master.save(passes)
+            master.set(users)
+            master.set(passes)
         }
 
         // Current User
-        client('current_user').to_fetch = function (k) {
-            client.log('* fetching: current_user')
+        client('current_user').to_get = function (k) {
+            client.log('* geting: current_user')
             if (!conn.client) return
-            var u = master.fetch('logged_in_clients')[conn.client]
+            var u = master.get('logged_in_clients')[conn.client]
             u = u && user_obj(u.key, true)
             return {user: u || null, logged_in: !!u}
         }
 
-        client('current_user').to_save = function (o, t) {
+        client('current_user').to_set = function (o, t) {
             function error (msg) {
-                client.save.abort(o)
-                var c = client.fetch('current_user')
+                client.set.abort(o)
+                var c = client.get('current_user')
                 c.error = msg
-                client.save(c)
+                client.set(c)
             }
 
             client.log('* saving: current_user!')
@@ -1793,9 +1793,9 @@ function import_server (bus, options)
                 client.client_id = o.client
                 client.client_ip = conn.remoteAddress
 
-                var connections = master.fetch('connections')
-                connections[conn.id].user = master.fetch('logged_in_clients')[conn.client]
-                master.save(connections)
+                var connections = master.get('connections')
+                connections[conn.id].user = master.get('logged_in_clients')[conn.client]
+                master.set(connections)
             }
             else {
                 if (o.create_account) {
@@ -1803,9 +1803,9 @@ function import_server (bus, options)
                     try {
                         create_account(o.create_account)
                         client.log('Success creating account!')
-                        var cu = client.fetch('current_user')
+                        var cu = client.get('current_user')
                         cu.create_account = null
-                        client.save.fire(cu)
+                        client.set.fire(cu)
                     } catch (e) {
                         error('Cannot create that account because ' + e)
                         return
@@ -1827,14 +1827,14 @@ function import_server (bus, options)
                             // Associate this user with this session
                             // user.log('Logging the user in!', u)
 
-                            var clients     = master.fetch('logged_in_clients')
-                            var connections = master.fetch('connections')
+                            var clients     = master.get('logged_in_clients')
+                            var connections = master.get('connections')
 
                             clients[conn.client]      = u
                             connections[conn.id].user = u
 
-                            master.save(clients)
-                            master.save(connections)
+                            master.set(clients)
+                            master.set(connections)
 
                             client.log('current_user: success logging in!')
                         }
@@ -1851,18 +1851,18 @@ function import_server (bus, options)
 
                 else if (o.logout) {
                     client.log('current_user: logging out')
-                    var clients = master.fetch('logged_in_clients')
-                    var connections = master.fetch('connections')
+                    var clients = master.get('logged_in_clients')
+                    var connections = master.get('connections')
 
                     delete clients[conn.client]
                     connections[conn.id].user = null
 
-                    master.save(clients)
-                    master.save(connections)
+                    master.set(clients)
+                    master.set(connections)
                 }
             }
 
-            t.refetch()
+            t.reget()
         }
         client('current_user').to_delete = function () {}
 
@@ -1871,8 +1871,8 @@ function import_server (bus, options)
         var private_closet_space_key = /^user\/[^\/]+\/private.*/
 
         // User
-        client('user/*').to_save = function (o) {
-            var c = client.fetch('current_user')
+        client('user/*').to_set = function (o) {
+            var c = client.get('current_user')
             var user_key = o.key.match(/^user\/([^\/]+)/)
             user_key = user_key && ('user/' + user_key[1])
 
@@ -1881,14 +1881,14 @@ function import_server (bus, options)
                 client.log('Only the current user can touch themself.',
                            {logged_in: c.logged_in, as: c.user && c.user.key,
                             touching: user_key})
-                client.save.abort(o)
+                client.set.abort(o)
                 return
             }
 
             // Users have closet space at /user/<name>/*
             if (o.key.match(closet_space_key)) {
                 client.log('saving closet data')
-                master.save(o)
+                master.set(o)
                 return
             }
 
@@ -1900,7 +1900,7 @@ function import_server (bus, options)
                                      '?pass': 'string', '?email': 'string', /*'?pic': 'string',*/
                                      '*':'*'})) {
                 client.log('This user change fails validation.')
-                client.save.abort(o)
+                client.set.abort(o)
                 return
             }
 
@@ -1912,23 +1912,23 @@ function import_server (bus, options)
             var login = o.login || o.name
             if (!login) {
                 client.log('User must have a login or a name')
-                client.save.abort(o)
+                client.set.abort(o)
                 return
             }
 
-            var u = master.fetch(o.key)
-            var userpass = master.fetch('users/passwords')
+            var u = master.get(o.key)
+            var userpass = master.get('users/passwords')
 
             // Validate that the login/name is not changed to something clobberish
             var old_login = u.login || u.name
             if (old_login.toLowerCase() !== login.toLowerCase()
                 && userpass.hasOwnProperty(login)) {
                 client.log('The login', login, 'is already taken. Aborting.')
-                client.save.abort(o)         // Abort
+                client.set.abort(o)         // Abort
 
-                o = client.fetch(o.key)      // Add error message
+                o = client.get(o.key)      // Add error message
                 o.error = 'The login "' + login + '" is already taken'
-                client.save.fire(o)
+                client.set.fire(o)
 
                 return                       // And exit
             }
@@ -1965,11 +1965,11 @@ function import_server (bus, options)
                 if (!protected.hasOwnProperty(k) && !o.hasOwnProperty(k))
                     delete u[k]
 
-            master.save(u)
+            master.set(u)
         }
-        client('user/*').to_fetch = function user_fetcher (k) {
-            var c = client.fetch('current_user')
-            client.log('* fetching:', k, 'as', c.user)
+        client('user/*').to_get = function user_geter (k) {
+            var c = client.get('current_user')
+            client.log('* geting:', k, 'as', c.user)
 
             // Users have closet space at /user/<name>/*
             if (k.match(closet_space_key)) {
@@ -1979,8 +1979,8 @@ function import_server (bus, options)
                     client.log('hiding private closet data')
                     return {}
                 }
-                client.log('fetching closet data')
-                return client.clone(master.fetch(k))
+                client.log('geting closet data')
+                return client.clone(master.get(k))
             }
 
             // Otherwise return the actual user
@@ -1988,7 +1988,7 @@ function import_server (bus, options)
         }
         client('user/*').to_delete = function () {}
         function user_obj (k, logged_in) {
-            var o = master.clone(master.fetch(k))
+            var o = master.clone(master.get(k))
             if (k.match(/^user\/([^\/]+)\/private\/(.*)$/))
                 return logged_in ? o : {key: k}
             
@@ -2000,8 +2000,8 @@ function import_server (bus, options)
         // Blacklist sensitive stuff on master, in case we have a shadow set up
         var blacklist = 'users users/passwords logged_in_clients'.split(' ')
         for (var i=0; i<blacklist.length; i++) {
-            client(blacklist[i]).to_fetch  = function () {}
-            client(blacklist[i]).to_save   = function () {}
+            client(blacklist[i]).to_get  = function () {}
+            client(blacklist[i]).to_set   = function () {}
             client(blacklist[i]).to_delete = function () {}
             client(blacklist[i]).to_forget = function () {}
         }
@@ -2033,16 +2033,16 @@ function import_server (bus, options)
                     client.master.del(old_key)
 
                     if (!(cache.hasOwnProperty(new_key))) {
-                        // Save the new
+                        // Set the new
                         o.key = new_key
-                        client.master.save(o)
+                        client.master.set(o)
                     }
                 }
             }
         }
 
-        client(prefix_to_sync).to_fetch = function (key) {
-            var c = client.fetch('current_user')
+        client(prefix_to_sync).to_get = function (key) {
+            var c = client.get('current_user')
             if (client.loading()) return
             var prefix = client_prefix(c)
 
@@ -2052,7 +2052,7 @@ function import_server (bus, options)
             was_logged_in = c.logged_in
 
             // Get the state from master
-            var obj = client.clone(client.master.fetch(prefix + key))
+            var obj = client.clone(client.master.get(prefix + key))
 
             // Translate it back to client
             obj = client.deep_map(obj, function (o) {
@@ -2063,14 +2063,14 @@ function import_server (bus, options)
             return obj
         }
 
-        client(prefix_to_sync).to_save = function (obj) {
+        client(prefix_to_sync).to_set = function (obj) {
             if (validate && !validate(obj)) {
                 console.warn('Validation failed on', obj)
-                client.save.abort(obj)
+                client.set.abort(obj)
                 return
             }
 
-            var c = client.fetch('current_user')
+            var c = client.get('current_user')
             if (client.loading()) return
             var prefix = client_prefix(c)
 
@@ -2082,12 +2082,12 @@ function import_server (bus, options)
                 return o
             })
 
-            // Save to master
-            client.master.save(obj)
+            // Set to master
+            client.master.set(obj)
         }
 
         client(prefix_to_sync).to_delete = function (k) {
-            client.master.delete(client_prefix(client.fetch('current_user')) + k)
+            client.master.delete(client_prefix(client.get('current_user')) + k)
         }
     },
 
@@ -2100,17 +2100,17 @@ function import_server (bus, options)
             // to the global cache
             if (count === 0) {
                 count++
-                if (method === 'to_fetch')
+                if (method === 'to_get')
                     bus.run_handler(function get_from_master (k) {
-                        // console.log('DEFAULT FETCHing', k)
-                        var r = master_bus.fetch(k)
-                        // console.log('DEFAULT FETCHed', r)
-                        bus.save.fire(r, {version: master_bus.versions[r.key]})
+                        // console.log('DEFAULT GETing', k)
+                        var r = master_bus.get(k)
+                        // console.log('DEFAULT GETed', r)
+                        bus.set.fire(r, {version: master_bus.versions[r.key]})
                         }, method, arg)
-                else if (method === 'to_save')
-                    bus.run_handler(function save_to_master (o, t) {
+                else if (method === 'to_set')
+                    bus.run_handler(function set_to_master (o, t) {
                         // console.log('DEFAULT ROUTE', t)
-                        master_bus.save(bus.clone(o), t)
+                        master_bus.set(bus.clone(o), t)
                     }, method, arg, {t: t})
                 else if (method == 'to_delete')
                     bus.run_handler(function delete_from_master (k, t) {
@@ -2177,7 +2177,7 @@ function import_server (bus, options)
         var buffer = {}
         var full_file_path = require('path').join(__dirname, file_path)
 
-        bus(state_path + '*').to_fetch = (rest) => {
+        bus(state_path + '*').to_get = (rest) => {
             // We DO want to handle:
             //   - "foo"
             //   - "foo/*"
@@ -2203,7 +2203,7 @@ function import_server (bus, options)
             return {_:f}
         }
 
-        bus(state_path + '/*').to_save = (o, rest, t) => {
+        bus(state_path + '/*').to_set = (o, rest, t) => {
             if (rest.length>0 && rest[0] !== '/') return
             var f = Buffer.from(o._, 'base64')
             require('fs').writeFile(file_path + rest, f)
@@ -2214,15 +2214,15 @@ function import_server (bus, options)
         bus.http.use('/'+state_path, require('express').static(full_file_path))
     },
 
-    // Installs a GET handler at route that gets state from a fetcher function
+    // Installs a GET handler at route that gets state from a geter function
     // Note: Makes too many textbusses.  Should re-use one.
-    http_serve: function http_serve (route, fetcher) {
+    http_serve: function http_serve (route, geter) {
         var textbus = require('./statebus')()
         textbus.label = 'textbus'
         var watched = new Set()
-        textbus('*').to_fetch = (filename, old) => {
+        textbus('*').to_get = (filename, old) => {
             return {etag: Math.random() + '',
-                    _: fetcher(filename)}
+                    _: geter(filename)}
         }
         bus.http.get(route, (req, res) => {
             var path = req.path
@@ -2232,8 +2232,8 @@ function import_server (bus, options)
                 return
             }
 
-            textbus.fetch(req.path) // So that textbus never clears the cache
-            textbus.fetch(req.path, function cb (o) {
+            textbus.get(req.path) // So that textbus never clears the cache
+            textbus.get(req.path, function cb (o) {
                 res.setHeader('Cache-Control', 'public')
                 // res.setHeader('Cache-Control', 'public, max-age='
                 //               + (60 * 60 * 24 * 30))  // 1 month
@@ -2282,7 +2282,7 @@ function import_server (bus, options)
 
     serve_clientjs: function serve_clientjs (path) {
         path = path || 'client.js'
-        bus(path).to_fetch = () =>
+        bus(path).to_get = () =>
             ({_:
               ['extras/coffee.js', 'extras/sockjs.js', 'extras/react.js',
                'statebus.js', 'client.js']
@@ -2291,7 +2291,7 @@ function import_server (bus, options)
     },
 
     serve_wiki: () => {
-        bus('edit/*').to_fetch = () => ({_: require('./extras/wiki.coffee').code})
+        bus('edit/*').to_get = () => ({_: require('./extras/wiki.coffee').code})
     },
 
     unix_socket_repl: function (filename) {
@@ -2364,7 +2364,7 @@ function import_server (bus, options)
     bus.options = default_options(bus)
     set_options(bus, options)
 
-    // Automatically make state:// fetch over a websocket
+    // Automatically make state:// get over a websocket
     bus.net_automount()
     return bus
 }

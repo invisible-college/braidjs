@@ -7,13 +7,13 @@
     
 
     // ****************
-    // Fetch, Save, Forget, Delete
+    // Get, Set, Forget, Delete
 
-    function fetch (key, callback) {
+    function get (key, callback) {
         key = key.key || key    // You can pass in an object instead of key
                                 // We should probably disable this in future
         if (typeof key !== 'string')
-            throw ('Error: fetch(key) called with a non-string key: '+key)
+            throw ('Error: get(key) called with a non-string key: '+key)
         bogus_check(key)
 
         var called_from_reactive_funk = !callback
@@ -21,7 +21,7 @@
 
         if (callback) {
             (callback.defined = callback.defined || []
-            ).push({as:'fetch callback', key:key});
+            ).push({as:'get callback', key:key});
             callback.has_seen = callback.has_seen || function (bus, key, version) {
                 callback.seen_keys = callback.seen_keys || {}
                 var bus_key = JSON.stringify([bus.id, key])
@@ -36,27 +36,27 @@
 
         if (called_from_reactive_funk)
             funk.has_seen(bus, key, versions[key])  // Maybe this line should go below, in the existing "if (called_from_reactive_funk) {" ??
-        fetches_in.add(key, funk_key(funk))
+        getes_in.add(key, funk_key(funk))
         if (to_be_forgotten[key]) {
             clearTimeout(to_be_forgotten[key])
             delete to_be_forgotten[key]
         }
 
-        bind(key, 'on_save', funk)
+        bind(key, 'on_set', funk)
 
-        // ** Call fetchers upstream **
+        // ** Call geters upstream **
 
-        // TODO: checking fetches_out[] doesn't count keys that we got which
+        // TODO: checking getes_out[] doesn't count keys that we got which
         // arrived nested within a bigger object, because we never explicity
-        // fetched those keys.  But we don't need to fetch them now cause we
+        // geted those keys.  But we don't need to get them now cause we
         // already have them.
-        var to_fetchers = 0
-        if (!fetches_out[key])
-            to_fetchers = bus.route(key, 'to_fetch', key)
+        var to_geters = 0
+        if (!getes_out[key])
+            to_geters = bus.route(key, 'to_get', key)
 
         // Now there might be a new value pubbed onto this bus.
-        // Or there might be a pending fetch.
-        // ... or there weren't any fetchers upstream.
+        // Or there might be a pending get.
+        // ... or there weren't any geters upstream.
 
 
         // ** Return a value **
@@ -68,30 +68,30 @@
         }
 
         // Otherwise, we want to make sure that a pub gets called on the
-        // handler.  If there's a pending fetch, then it'll get called later.
-        // If there was a to_fetch, then it already got called.  Otherwise,
+        // handler.  If there's a pending get, then it'll get called later.
+        // If there was a to_get, then it already got called.  Otherwise,
         // let's call it now.
-        else if (!pending_fetches[key] && to_fetchers === 0) {
+        else if (!pending_getes[key] && to_geters === 0) {
             // TODO: my intuition suggests that we might prefer to
-            // delay this .on_save getting called in a
+            // delay this .on_set getting called in a
             // setTimeout(f,0), to be consistent with other calls to
-            // .on_save.
+            // .on_set.
             backup_cache[key] = backup_cache[key] || {key: key}
-            run_handler(funk, 'on_save', cache[key] = cache[key] || {key: key})
+            run_handler(funk, 'on_set', cache[key] = cache[key] || {key: key})
         }
     }
-    function fetch_once (key, cb) {
+    function get_once (key, cb) {
         function cb2 (o) { cb(o); forget(key, cb2) }
-        // fetch(key)   // This prevents key from being forgotten
-        fetch(key, cb2)
+        // get(key)   // This prevents key from being forgotten
+        get(key, cb2)
     }
-    fetch.once = fetch_once
-    var pending_fetches = {}
-    var fetches_out = {}                // Maps `key' to `func' iff we've fetched `key'
-    var fetches_in = new One_To_Many()  // Maps `key' to `pub_funcs' subscribed to our key
+    get.once = get_once
+    var pending_getes = {}
+    var getes_out = {}                // Maps `key' to `func' iff we've geted `key'
+    var getes_in = new One_To_Many()  // Maps `key' to `pub_funcs' subscribed to our key
 
     var currently_saving
-    function save (obj, t) {
+    function set (obj, t) {
         // First let's handle diffs
         if (typeof obj === 'string' && t && t.patch) {
             if (typeof t.patch == 'string') t.patch = [t.patch]
@@ -100,7 +100,7 @@
         }
 
         if (!('key' in obj) || typeof obj.key !== 'string')
-            console.error('Error: save(obj) called on object without a key: ', obj)
+            console.error('Error: set(obj) called on object without a key: ', obj)
         bogus_check(obj.key)
 
         t = t || {}
@@ -113,7 +113,7 @@
         }
 
         if (honking_at(obj.key))
-            var message = save_msg(obj, t, 'save')
+            var message = set_msg(obj, t, 'set')
 
         // Ignore if nothing happened
         if (obj.key && !changed(obj)) {
@@ -127,22 +127,22 @@
             var was_saving = currently_saving
             currently_saving = obj.key
 
-            // Call the to_save() handlers!
-            var num_handlers = bus.route(obj.key, 'to_save', obj, t)
+            // Call the to_set() handlers!
+            var num_handlers = bus.route(obj.key, 'to_set', obj, t)
             if (num_handlers === 0)
                 // And fire if there weren't any!
-                save.fire(obj, t)
+                set.fire(obj, t)
         }
         finally {
             statelog_indent--
             currently_saving = was_saving
         }
         // TODO: Here's an alternative.  Instead of counting the handlers and
-        // seeing if there are zero, I could just make a to_save handler that
+        // seeing if there are zero, I could just make a to_set handler that
         // is shadowed by other handlers if I can get later handlers to shadow
         // earlier ones.
     }
-    save.fire = fire
+    set.fire = fire
     function fire (obj, t) {
         t = t || {}
         // Make sure it has a version.
@@ -153,7 +153,7 @@
             // Warning: Changes to *nested* objects will *not* be printed out!
             // In the future, we'll remove the recursion from fire() so that
             // nested objects aren't even changed.
-            var message = save_msg(obj, t, 'save.fire')
+            var message = set_msg(obj, t, 'set.fire')
             var color, icon
             if (currently_saving === obj.key &&
                 !(obj.key && !changed(obj))) {
@@ -166,18 +166,18 @@
                 if (obj.key && !changed(obj)) {
                     color = grey
                     icon = 'x'
-                    if (t.to_fetch)
-                        message = (t.m) || 'Fetched ' + bus + "('"+obj.key+"')"
+                    if (t.to_get)
+                        message = (t.m) || 'Geted ' + bus + "('"+obj.key+"')"
                     if (t.version) message += ' [' + t.version + ']'
                     statelog(obj.key, color, icon, message)
                     return
                 }
 
                 color = red, icon = '•'
-                if (t.to_fetch || pending_fetches[obj.key]) {
+                if (t.to_get || pending_getes[obj.key]) {
                     color = green
                     icon = '^'
-                    message = add_diff_msg((t.m)||'Fetched '+bus+"('"+obj.key+"')",
+                    message = add_diff_msg((t.m)||'Geted '+bus+"('"+obj.key+"')",
                                            obj)
                     if (t.version) message += ' [' + t.version + ']'
                 }
@@ -190,7 +190,7 @@
         // Recursively add all of obj, and its sub-objects, into the cache
         var modified_keys = update_cache(obj, cache)
 
-        delete pending_fetches[obj.key]
+        delete pending_getes[obj.key]
 
         if ((executing_funk !== global_funk) && executing_funk.loading()) {
             abort_changes(modified_keys)
@@ -211,7 +211,7 @@
         }
     }
 
-    save.abort = function (obj, t) {
+    set.abort = function (obj, t) {
         if (!obj) console.error('No obj', obj)
         abort_changes([obj.key])
         statelog(obj.key, yellow, '<', 'Aborting ' + obj.key)
@@ -272,7 +272,7 @@
             //    time they are pubbed into the cache.  After that, we can
             //    trust that they aren't referenced elsewhere.  (We make it
             //    the programmer's responsibility to clone data if necessary
-            //    on fetch, but not when on pub.)
+            //    on get, but not when on pub.)
             //
             //    We'll optimize this once we have history.  We can look at
             //    the old version to see if an object/array existed already
@@ -280,7 +280,7 @@
             //
             // 2. Don't go infinitely deep.
             //
-            //    Eventually, each save/pub will be limited to the scope
+            //    Eventually, each set/pub will be limited to the scope
             //    underneath nested keyed objects.  Right now I'm just
             //    recursing infinitely on the whole data structure with each
             //    pub.
@@ -340,7 +340,7 @@
     }
 
     function changed (object) {
-        return pending_fetches[object.key]
+        return pending_getes[object.key]
             || !       cache.hasOwnProperty(object.key)
             || !backup_cache.hasOwnProperty(object.key)
             || !(deep_equals(object, backup_cache[object.key]))
@@ -351,7 +351,7 @@
     }
 
 
-    function forget (key, save_handler) {
+    function forget (key, set_handler) {
         if (arguments.length === 0) {
             // Then we're forgetting the executing funk
             console.assert(executing_funk !== global_funk,
@@ -361,29 +361,29 @@
         }
         bogus_check(key)
 
-        //log('forget:', key, funk_name(save_handler), funk_name(executing_funk))
-        save_handler = save_handler || executing_funk
-        var fkey = funk_key(save_handler)
-        //console.log('Fetches in is', fetches_in.hash)
-        if (!fetches_in.has(key, fkey)) {
+        //log('forget:', key, funk_name(set_handler), funk_name(executing_funk))
+        set_handler = set_handler || executing_funk
+        var fkey = funk_key(set_handler)
+        //console.log('Getes in is', getes_in.hash)
+        if (!getes_in.has(key, fkey)) {
             console.error("***\n****\nTrying to forget lost key", key,
-                          'from', funk_name(save_handler), fkey,
-                          "that hasn't fetched that key.",
-                          funks[fetches_in.get(key)[0]],
-                          funks[fetches_in.get(key)[0]] && funks[fetches_in.get(key)[0]].statebus_id
+                          'from', funk_name(set_handler), fkey,
+                          "that hasn't geted that key.",
+                          funks[getes_in.get(key)[0]],
+                          funks[getes_in.get(key)[0]] && funks[getes_in.get(key)[0]].statebus_id
                          )
             console.trace()
             return
             // throw Error('asdfalsdkfajsdf')
         }
 
-        fetches_in.delete(key, fkey)
-        unbind(key, 'on_save', save_handler)
+        getes_in.delete(key, fkey)
+        unbind(key, 'on_set', set_handler)
 
         // If this is the last handler listening to this key, then we can
         // delete the cache entry, send a forget upstream, and de-activate the
-        // .on_fetch handler.
-        if (!fetches_in.has_any(key)) {
+        // .on_get handler.
+        if (!getes_in.has_any(key)) {
             clearTimeout(to_be_forgotten[key])
             to_be_forgotten[key] = setTimeout(function () {
                 // Send a forget upstream
@@ -391,11 +391,11 @@
 
                 // Delete the cache entry...?
                 // delete cache[key]
-                delete fetches_out[key]
+                delete getes_out[key]
                 delete to_be_forgotten[key]
 
-                // Todo: deactivate any reactive .on_fetch handler, or
-                // .on_save handler.
+                // Todo: deactivate any reactive .on_get handler, or
+                // .on_set handler.
             }, 200)
 
             // BUG: The delay on forgetting means that reactive functions that
@@ -430,7 +430,7 @@
         //    etc.
         //    - NOTE: I did a crappy implementation of abort just now above!
         //      But it doesn't work if called after the to_delete handler returns.
-        //    - Generalize the code across save and del with a "mutate"
+        //    - Generalize the code across set and del with a "mutate"
         //      operation
         //
         //  - Right now we fire the to_delete handlers right here.
@@ -445,16 +445,16 @@
     }
 
     var changed_keys = new Set()
-    var dirty_fetchers = new Set()
+    var dirty_geters = new Set()
     function dirty (key, t) {
         statelog(key, brown, '*', bus + ".dirty('"+key+"')")
         bogus_check(key)
 
-        // Find any .to_fetch, and mark as dirty so that it re-runs
+        // Find any .to_get, and mark as dirty so that it re-runs
         var found = false
-        if (fetches_out.hasOwnProperty(key))
-            for (var i=0; i<fetches_out[key].length; i++) {
-                dirty_fetchers.add(funk_key(fetches_out[key][i]))
+        if (getes_out.hasOwnProperty(key))
+            for (var i=0; i<getes_out[key].length; i++) {
+                dirty_geters.add(funk_key(getes_out[key][i]))
                 found = true
             }
         clean_timer = clean_timer || setTimeout(clean)
@@ -471,7 +471,7 @@
     }
 
     function clean () {
-        // 1. Collect all functions for all keys and dirtied fetchers
+        // 1. Collect all functions for all keys and dirtied geters
         var dirty_funks = new Set()
         for (var b in busses) {
             var fs = busses[b].rerunnable_funks()
@@ -480,7 +480,7 @@
         }
         clean_timer = null
 
-        // 2. Run any priority function first (e.g. file_store's on_save)
+        // 2. Run any priority function first (e.g. file_store's on_set)
         dirty_funks = dirty_funks.values()
         log('Cleaning up', dirty_funks.length, 'funks')
         for (var i=0; i<dirty_funks.length; i++) {
@@ -506,21 +506,21 @@
     function rerunnable_funks () {
         var result = []
         var keys = changed_keys.values()
-        var fetchers = dirty_fetchers.values()
+        var geters = dirty_geters.values()
 
-        //log(bus+' Cleaning up!', keys, 'keys, and', fetchers.length, 'fetchers')
+        //log(bus+' Cleaning up!', keys, 'keys, and', geters.length, 'geters')
         for (var i=0; i<keys.length; i++) {          // Collect all keys
             // if (to_be_forgotten[keys[i]])
             //     // Ignore changes to keys that have been forgotten, but not
             //     // processed yet
             //     continue
-            var fs = bindings(keys[i], 'on_save')
+            var fs = bindings(keys[i], 'on_set')
             for (var j=0; j<fs.length; j++) {
                 var f = fs[j].func
                 if (f.react) {
                     // Skip if it's already up to date
-                    var v = f.fetched_keys[JSON.stringify([this.id, keys[i]])]
-                    //log('re-run:', keys[i], f.statebus_id, f.fetched_keys)
+                    var v = f.geted_keys[JSON.stringify([this.id, keys[i]])]
+                    //log('re-run:', keys[i], f.statebus_id, f.geted_keys)
                     if (v && v.indexOf(versions[keys[i]]) !== -1) {
                         log('skipping', funk_name(f), 'already at version', versions[keys[i]], 'proof:', v)
                         continue
@@ -534,17 +534,17 @@
                         continue
                     }
                     autodetect_args(f)
-                    f = run_handler(f, 'on_save', cache[keys[i]], {dont_run: true,
+                    f = run_handler(f, 'on_set', cache[keys[i]], {dont_run: true,
                                                                    binding: keys[i]})
                 }
                 result.push(funk_key(f))
             }
         }
-        for (var i=0; i<fetchers.length; i++)        // Collect all fetchers
-            result.push(fetchers[i])
+        for (var i=0; i<geters.length; i++)        // Collect all geters
+            result.push(geters[i])
 
         changed_keys.clear()
-        dirty_fetchers.clear()
+        dirty_geters.clear()
 
         //log('found', result.length, 'funks to re run')
 
@@ -555,7 +555,7 @@
     // Connections
     function subspace (key) {
         var result = {}
-        for (var method in {to_fetch:null, to_save:null, on_save:null,
+        for (var method in {to_get:null, to_set:null, on_set:null,
                             to_delete:null, to_forget:null})
             (function (method) {
                 Object.defineProperty(result, method, {
@@ -612,7 +612,7 @@
             }
     }
 
-    // The funks attached to each key, maps e.g. 'fetch /point/3' to '/30'
+    // The funks attached to each key, maps e.g. 'get /point/3' to '/30'
     var handlers = new One_To_Many()
     var wildcard_handlers = []  // An array of {prefix, method, funk}
 
@@ -627,7 +627,7 @@
         else
             handlers.add(method + ' ' + key, funk_key(func))
 
-        // Now check if the method is a fetch and there's a fetched
+        // Now check if the method is a get and there's a geted
         // key in this space, and if so call the handler.
     }
     function unbind (key, method, funk, allow_wildcards) {
@@ -694,9 +694,9 @@
             just_make_it = options.dont_run,
             binding = options.binding
 
-        // When we first run a handler (e.g. a fetch or save), we wrap it in a
-        // reactive() funk that calls it with its arg.  Then if it fetches or
-        // saves, it'll register a .on_save handler with this funk.
+        // When we first run a handler (e.g. a get or set), we wrap it in a
+        // reactive() funk that calls it with its arg.  Then if it getes or
+        // sets, it'll register a .on_set handler with this funk.
 
         // Is it reactive already?  Let's distinguish it.
         var funk = funck.react && funck,  // Funky!  So reactive!
@@ -706,7 +706,7 @@
 
         if (false && !funck.global_funk) {
             // \u26A1
-            var event = {'to_save':'save','on_save':'save.fire','to_fetch':'fetch',
+            var event = {'to_set':'set','on_set':'set.fire','to_get':'get',
                          'to_delete':'delete','to_forget':'forget'}[method],
                 triggering = funk ? 're-running' : 'initiating'
             console.log('   > a', bus+'.'+event + "('" + (arg.key||arg) + "') is " + triggering
@@ -714,12 +714,12 @@
         }
 
         if (funk) {
-            // Then this is an on_save event re-triggering an already-wrapped
+            // Then this is an on_set event re-triggering an already-wrapped
             // funk.  It has its own arg internally that it's calling itself
             // with.  Let's tell it to re-trigger itself with that arg.
 
-            if (method !== 'on_save') {
-                console.error(method === 'on_save', 'Funk is being re-triggered, but isn\'t on_save. It is: "' + method + '", oh and funk: ' + funk_name(funk))
+            if (method !== 'on_set') {
+                console.error(method === 'on_set', 'Funk is being re-triggered, but isn\'t on_set. It is: "' + method + '", oh and funk: ' + funk_name(funk))
                 return
             }
             return funk.react()
@@ -727,27 +727,27 @@
             // This might not work that great.
             // Ex:
             //
-            //    bus('foo').on_save = function (o) {...}
-            //    save({key: 'foo'})
-            //    save({key: 'foo'})
-            //    save({key: 'foo'})
+            //    bus('foo').on_set = function (o) {...}
+            //    set({key: 'foo'})
+            //    set({key: 'foo'})
+            //    set({key: 'foo'})
             //
             // Does this spin up 3 reactive functions?  I think so.
             // No, I think it does, but they all get forgotten once
             // they run once, and then are garbage collected.
             //
-            //    bus('foo*').on_save = function (o) {...}
-            //    save({key: 'foo1'})
-            //    save({key: 'foo2'})
-            //    save({key: 'foo1'})
-            //    save({key: 'foo3'})
+            //    bus('foo*').on_set = function (o) {...}
+            //    set({key: 'foo1'})
+            //    set({key: 'foo2'})
+            //    set({key: 'foo1'})
+            //    set({key: 'foo3'})
             //
             // Does this work ok?  Yeah, I think so.
         }
 
         // Alright then.  Let's wrap this func with some funk.
 
-        // Fresh fetch/save/forget/delete handlers will just be regular
+        // Fresh get/set/forget/delete handlers will just be regular
         // functions.  We'll store their arg and let them re-run until they
         // are done re-running.
         function key_arg () { return ((typeof arg.key) == 'string') ? arg.key : arg }
@@ -764,43 +764,43 @@
 
             // Initialize transaction
             t = clone(t || {})
-            if (!(method in {to_fetch:1, to_forget:1}))
+            if (!(method in {to_get:1, to_forget:1}))
                 t.abort = function () {
-                    var key = method === 'to_save' ? arg.key : arg
+                    var key = method === 'to_set' ? arg.key : arg
                     if (f.loading()) return
                     bus.cache[key] = bus.cache[key] || {key: key}
                     bus.backup_cache[key] = bus.backup_cache[key] || {key: key}
-                    bus.save.abort(bus.cache[key])
+                    bus.set.abort(bus.cache[key])
                 }
             if (method !== 'to_forget')
                 t.done = function (o) {
-                    var key = method === 'to_save' ? arg.key : arg
+                    var key = method === 'to_set' ? arg.key : arg
                     bus.log('We are DONE()ing', method, key, o||arg)
 
                     // We use a simple (and crappy?) heuristic to know if to
-                    // to_save handler has changed the state: whether the
+                    // to_set handler has changed the state: whether the
                     // programmer passed (o) to the t.done(o) handler.  If
                     // not, we assume it hasn't changed.  If so, we assume it
                     // *has* changed, and thus we change the version of the
                     // state.  I imagine it would be more accurate to diff o
-                    // from before the to_save handler began with when
+                    // from before the to_set handler began with when
                     // t.done(o) ran.
                     if (o) t.version = new_version()
 
                     if (method === 'to_delete')
                         delete bus.cache[key]
-                    else if (method === 'to_save')
-                        bus.save.fire(o || arg, t)
-                    else { // Then method === to_fetch
+                    else if (method === 'to_set')
+                        bus.set.fire(o || arg, t)
+                    else { // Then method === to_get
                         o.key = key
-                        bus.save.fire(o, t)
+                        bus.set.fire(o, t)
                         // And now reset the version cause it could get called again
                         delete t.version
                     }
                 }
             t.return = t.done
-            if (method === 'to_save')
-                t.refetch = function () { bus.dirty(arg.key) }
+            if (method === 'to_set')
+                t.reget = function () { bus.dirty(arg.key) }
 
             // Then in run_handler, we'll call it with:
             var args = []
@@ -840,34 +840,34 @@
             //    arr[func.args[k]] = <compute_blah(k)>
 
             // Trigger done() or abort() by return value
-            console.assert(!(result === 'to_fetch' &&
+            console.assert(!(result === 'to_get' &&
                              (result === 'done' || result === 'abort')),
-                           'Returning "done" or "abort" is not allowed from to_fetch handlers')
+                           'Returning "done" or "abort" is not allowed from to_get handlers')
             if (result === 'done')  t.done()
             if (result === 'abort') t.abort()
 
-            // For fetch
-            if (method === 'to_fetch' && result instanceof Object
+            // For get
+            if (method === 'to_get' && result instanceof Object
                 && !f.loading()     // Experimental.
                ) {
                 result.key = arg
                 var new_t = clone(t || {})
-                new_t.to_fetch = true
-                save.fire(result, new_t)
+                new_t.to_get = true
+                set.fire(result, new_t)
                 return result
             }
 
-            // Save, forget and delete handlers stop re-running once they've
+            // Set, forget and delete handlers stop re-running once they've
             // completed without anything loading.
             // ... with f.forget()
-            if (method !== 'to_fetch' && !f.loading())
+            if (method !== 'to_get' && !f.loading())
                 f.forget()
         })
         f.proxies_for = func
         f.arg = arg
 
-        // to_fetch handlers stop re-running when the key is forgotten
-        if (method === 'to_fetch') {
+        // to_get handlers stop re-running when the key is forgotten
+        if (method === 'to_get') {
             var key = arg
             function handler_done () {
                 f.forget()
@@ -876,13 +876,13 @@
             bind(key, 'to_forget', handler_done)
 
             // // Check if it's doubled-up
-            // if (fetches_out[key])
-            //     console.error('Two .to_fetch functions are running on the same key',
-            //                   key+'!', funk_name(funck), funk_name(fetches_out[key]))
+            // if (getes_out[key])
+            //     console.error('Two .to_get functions are running on the same key',
+            //                   key+'!', funk_name(funck), funk_name(getes_out[key]))
 
-            fetches_out[key] = fetches_out[key] || []
-            fetches_out[key].push(f)   // Record active to_fetch handler
-            pending_fetches[key] = f   // Record that the fetch is pending
+            getes_out[key] = getes_out[key] || []
+            getes_out[key].push(f)   // Record active to_get handler
+            pending_getes[key] = f   // Record that the get is pending
         }
 
         if (just_make_it)
@@ -901,9 +901,9 @@
         for (var i=0; i<handlers.length; i++)
             bus.run_handler(handlers[i].func, method, arg, {t: t, binding: handlers[i].key})
 
-        // if (method === 'to_fetch')
+        // if (method === 'to_get')
         //     console.assert(handlers.length<2,
-        //                    'Two to_fetch functions are registered for the same key '+key,
+        //                    'Two to_get functions are registered for the same key '+key,
         //                    handlers)
         return handlers.length
     }
@@ -913,7 +913,7 @@
     // Reactive functions
     //
     // We wrap any function with a reactive wrapper that re-calls it whenever
-    // state it's fetched changes.
+    // state it's geted changes.
 
     if (!global_funk) {
         global_funk = reactive(function global_funk () {})
@@ -928,7 +928,7 @@
         //    f = reactive(func)
         //    f(arg1, arg2)
         //
-        // This will remember every fetch it depends on, and make it re-call
+        // This will remember every get it depends on, and make it re-call
         // itself whenever that state changes.  It will remember arg1 and arg2
         // and use those again.  You can also trigger a re-action manually
         // with:
@@ -987,14 +987,14 @@
 
         funk.func = func  // just for debugging
         funk.called_directly = true
-        funk.fetched_keys = {} // maps [bus,key] to version
+        funk.geted_keys = {} // maps [bus,key] to version
                                // version will be undefined until loaded
         funk.abortable_keys = []
         funk.has_seen = function (bus, key, version) {
             //console.log('depend:', bus, key, versions[key])
             var bus_key = JSON.stringify([bus.id, key])
             var seen_versions =
-                this.fetched_keys[bus_key] = this.fetched_keys[bus_key] || []
+                this.geted_keys[bus_key] = this.geted_keys[bus_key] || []
             seen_versions.push(version)
             if (versions.length > 10) versions.shift()
         }
@@ -1009,29 +1009,29 @@
             return result
         }
         funk.forget = function () {
-            // Todo: This will bug out if an .on_save handler for a key also
-            // fetches that key once, and then doesn't fetch it again, because
-            // when it fetches the key, that key will end up being a
-            // fetched_key, and will then be forgotten as soon as the funk is
-            // re-run, and doesn't fetch it again, and the fact that it is
-            // defined as an .on_save .on_save handler won't matter anymore.
+            // Todo: This will bug out if an .on_set handler for a key also
+            // getes that key once, and then doesn't get it again, because
+            // when it getes the key, that key will end up being a
+            // geted_key, and will then be forgotten as soon as the funk is
+            // re-run, and doesn't get it again, and the fact that it is
+            // defined as an .on_set .on_set handler won't matter anymore.
 
             if (funk.statebus_id === 'global funk') return
 
-            for (var hash in funk.fetched_keys) {
+            for (var hash in funk.geted_keys) {
                 var tmp = JSON.parse(hash),
                     bus = busses[tmp[0]], key = tmp[1]
                 if (bus)  // Cause it might have been deleted
                     bus.forget(key, funk)
             }
-            funk.fetched_keys = {}
+            funk.geted_keys = {}
         }
         funk.loading = function () {
-            for (var hash in funk.fetched_keys) {
+            for (var hash in funk.geted_keys) {
                 var tmp = JSON.parse(hash),
                     bus = busses[tmp[0]], key = tmp[1]
                 if (bus  // Cause it might have been deleted
-                    && bus.pending_fetches[key])
+                    && bus.pending_getes[key])
                     return true
             }
             return false
@@ -1045,9 +1045,9 @@
 
     function loading_keys (keys) {
         // Do any of these keys have outstanding gets?
-        //console.log('Loading: pending_keys is', pending_fetches)
+        //console.log('Loading: pending_keys is', pending_getes)
         for (var i=0; i<keys.length; i++)
-            if (pending_fetches[keys[i]]) return true
+            if (pending_getes[keys[i]]) return true
         return false
     }
 
@@ -1090,7 +1090,7 @@
         else message += ' <no diff>'
         return message
     }
-    function save_msg (obj, t, meth) {
+    function set_msg (obj, t, meth) {
         if (!honking_at(obj.key)) return
         var message = (t && t.m) || bus + "."+meth+"('"+obj.key+"')"
         message = add_diff_msg(message, obj)
@@ -1108,14 +1108,14 @@
         if (!name) throw 'Uncallback function needs a name'
         var watching = {}
         var prefix = 'uncallback/' + name
-        bus(prefix + '/*').to_fetch = function (key, json) {
+        bus(prefix + '/*').to_get = function (key, json) {
             var args = json
             function cb (err, result) {
                 if (err) {
                     console.trace('have err:', err, 'and result is', JSON.stringify(result))
                     throw err
                 } else
-                    bus.save.fire({key: key, _: result})
+                    bus.set.fire({key: key, _: result})
             }
 
             // Inject the callback into the right place
@@ -1142,7 +1142,7 @@
             }
         return function () {
             var args = [].slice.call(arguments)
-            return bus.fetch(prefix + '/' + JSON.stringify(args))._
+            return bus.get(prefix + '/' + JSON.stringify(args))._
         }
     }
 
@@ -1175,9 +1175,9 @@
                     k = encode_field(k)
                     return item_proxy(base, o[k])
                 },
-                set: function set(o, k, v) {
+                set: function SET(o, k, v) {
                     var result = o[encode_field(k)] = v
-                    bus.save(base)
+                    bus.set(base)
                     return result
                 },
                 has: function has(o, k) {
@@ -1196,12 +1196,12 @@
                 if (k in bogus_keys) return o[k]
                 if (k === 'inspect' || k === 'valueOf' || typeof k === 'symbol')
                     return undefined
-                var raw = bus.fetch(k),
+                var raw = bus.get(k),
                     obj = raw
                 while (typeof obj == 'object' && '_' in obj) obj = obj._
                 return item_proxy(raw, obj)
             },
-            set: function set(o, k, v) {
+            set: function SET(o, k, v) {
                 if (typeof v === 'number'
                     || typeof v === 'string'
                     || typeof v === 'boolean'
@@ -1213,9 +1213,9 @@
                 else
                     v = bus.clone(v)
                 v.key = k
-                bus.save(v)
+                bus.set(v)
             },
-            // In future, this might check if there's a .to_fetch function OR
+            // In future, this might check if there's a .to_get function OR
             // something in the cache:
             //
             // has: function has(o, k) {
@@ -1275,12 +1275,12 @@
             // If new base, update and subscribe
             if (typeof o == 'object' && 'key' in o) {
                 base = o
-                bus.fetch(o.key)
+                bus.get(o.key)
             }
         } else {
             // We are getting from the Root
-            o = bus.fetch(k)
-            // console.log('pget: fetched', k, 'and got', o)
+            o = bus.get(k)
+            // console.log('pget: geted', k, 'and got', o)
             base = o
             if (bus.validate(o, {key: '*', '?_': '*'})) {
                 // console.log('pget: jumping into the _')
@@ -1438,7 +1438,7 @@
                         delete base._
                     }
                         
-                    bus.save(base)
+                    bus.set(base)
                 }
 
                 // Saving into top-level state
@@ -1463,7 +1463,7 @@
                     encoded_v.key = k
 
                     // console.log('  set top-level: now encoded_v is', encoded_v)
-                    bus.save(encoded_v)
+                    bus.set(encoded_v)
                 }
 
                 var newbase = (encoded_v && encoded_v.key) ? encoded_v : base
@@ -1472,10 +1472,10 @@
             has: function has(O, k) {
                 // XXX QUESTIONS:
                 //
-                //  - Do I want this to return true if there's a .to_fetch()
+                //  - Do I want this to return true if there's a .to_get()
                 //    function for this o, k?
                 //
-                //  - Does this need to do a fetch as well?
+                //  - Does this need to do a get as well?
                 //
                 //  - For a keyed object, should this do a loading() check?
                 return o.hasOwnProperty(encode_field(k))
@@ -1486,7 +1486,7 @@
                     delete o[encode_field(k)]   // Deleting innards
                     if (Object.keys(o).length === 1 && o.key)
                         o._ = {}
-                    bus.save(base)
+                    bus.set(base)
                 }
                 else
                     bus.delete(encode_field(k)) // Deleting top-level
@@ -1515,8 +1515,8 @@
         return m && m[0]
     }
     function message_method (m) {
-        return (m.fetch && 'fetch')
-            || (m.save && 'save')
+        return (m.get && 'get')
+            || (m.set && 'set')
             || (m['delete'] && 'delete')
             || (m.forget && 'forget')
     }
@@ -1530,7 +1530,7 @@
         var sock
         var attempts = 0
         var outbox = []
-        var client_fetched_keys = new bus.Set()
+        var client_geted_keys = new bus.Set()
         var heartbeat
         if (url[url.length-1]=='/') url = url.substr(0,url.length-1)
         function nlog (s) {
@@ -1540,7 +1540,7 @@
             pushpop = pushpop || 'push'
             o = rem_prefixes(o)
             var m = message_method(o)
-            if (m == 'fetch' || m == 'delete' || m == 'forget')
+            if (m == 'get' || m == 'delete' || m == 'forget')
                 o[m] = rem_prefix(o[m])
             bus.log('net_mount.send:', JSON.stringify(o))
             outbox[pushpop](JSON.stringify(o))
@@ -1562,19 +1562,19 @@
         function rem_prefixes (obj) {
             return bus.translate_keys(bus.clone(obj), rem_prefix) }
 
-        bus(prefix).to_save   = function (obj, t) {
-            bus.save.fire(obj)
-            var x = {save: obj}
+        bus(prefix).to_set   = function (obj, t) {
+            bus.set.fire(obj)
+            var x = {set: obj}
             if (t.version) x.version = t.version
             if (t.parents) x.parents = t.parents
             if (t.patch)   x.patch   = t.patch
-            if (t.patch)   x.save    = rem_prefix(x.save.key)
+            if (t.patch)   x.set    = rem_prefix(x.set.key)
             send(x)
         }
-        bus(prefix).to_fetch  = function (key) { send({fetch: key}),
-                                                 client_fetched_keys.add(key) }
+        bus(prefix).to_get  = function (key) { send({get: key}),
+                                                 client_geted_keys.add(key) }
         bus(prefix).to_forget = function (key) { send({forget: key}),
-                                                 client_fetched_keys.delete(key) }
+                                                 client_geted_keys.delete(key) }
         bus(prefix).to_delete = function (key) { send({'delete': key}) }
 
         function connect () {
@@ -1584,16 +1584,16 @@
                 nlog('[*] opened ' + url)
 
                 // Update state
-                var peers = bus.fetch('peers')
+                var peers = bus.get('peers')
                 peers[url] = peers[url] || {}
                 peers[url].connected = true
-                save(peers)
+                set(peers)
 
                 // Login
                 var creds = client_creds || (bus.client_creds && bus.client_creds(url))
                 if (creds) {
                     var i = []
-                    function intro (o) {i.push(JSON.stringify({save: o}))}
+                    function intro (o) {i.push(JSON.stringify({set: o}))}
                     if (creds.clientid)
                         intro({key: 'current_user', client: creds.clientid})
                     if (creds.name && creds.pass)
@@ -1612,11 +1612,11 @@
 
                 // Reconnect
                 if (attempts > 0) {
-                    // Then we need to refetch everything, cause it
+                    // Then we need to reget everything, cause it
                     // might have changed
-                    var keys = client_fetched_keys.values()
+                    var keys = client_geted_keys.values()
                     for (var i=0; i<keys.length; i++)
-                        send({fetch: keys[i]})
+                        send({get: keys[i]})
                 }
 
                 attempts = 0
@@ -1632,14 +1632,14 @@
                 setTimeout(connect, attempts++ < 3 ? 1500 : 5000)
 
                 // Update state
-                var peers = bus.fetch('peers')
+                var peers = bus.get('peers')
                 peers[url] = peers[url] || {}
                 peers[url].connected = false
-                save(peers)
+                set(peers)
 
-                // Remove all fetches and forgets from queue
+                // Remove all getes and forgets from queue
                 var new_outbox = []
-                var bad = {'fetch':1, 'forget':1}
+                var bad = {'get':1, 'forget':1}
                 for (var i=0; i<outbox.length; i++)
                     if (!bad[JSON.parse(outbox[i]).method])
                         new_outbox.push(outbox[i])
@@ -1654,25 +1654,25 @@
                 // re-render 100 times for a function that depends on
                 // 100 items from server while they come in.  This
                 // probably won't make things render any sooner, but
-                // will probably save energy.
+                // will probably set energy.
 
                 //console.log('[.] message')
                 try {
                     var message = JSON.parse(event.data)
                     var method = message_method(message)
 
-                    // We only take saves from the server for now
-                    if (method !== 'save' && method !== 'pong') throw 'barf'
+                    // We only take sets from the server for now
+                    if (method !== 'set' && method !== 'pong') throw 'barf'
                     bus.log('net client received', message)
                     var t = {version: message.version,
                              parents: message.parents,
                              patch: message.patch}
                     if (t.patch)
-                        msg.save = apply_patch(bus.cache[msg.save] || {key: msg.save},
+                        msg.set = apply_patch(bus.cache[msg.set] || {key: msg.set},
                                                message.patch[0])
                     if (!(t.version||t.parents||t.patch))
                         t = undefined
-                    bus.save.fire(add_prefixes(message.save), t)
+                    bus.set.fire(add_prefixes(message.set), t)
                 } catch (err) {
                     console.error('Received bad network message from '
                                   +url+': ', event.data, err)
@@ -1999,8 +1999,8 @@
     }
 
     // This prune() function is a temporary workaround for dealing with nested
-    // objects in save() handlers, until we change statebus' behavior.  Right
-    // now, it calls .to_save only on the top-level state.  But if that state
+    // objects in set() handlers, until we change statebus' behavior.  Right
+    // now, it calls .to_set only on the top-level state.  But if that state
     // validates, it calls fire() on *every* level of state.  This means that
     // state changes can sneak inside.  Prune() will take out any changes from
     // the nested levels of state in a new object -- replacing them with the
@@ -2017,7 +2017,7 @@
             // Recurse through each property on objects
             else if (typeof(o) === 'object')
                 if (o.key)
-                    return bus.fetch(o.key)
+                    return bus.get(o.key)
             else
                 for (var k in o)
                     o[k] = recurse(o[k])
@@ -2123,8 +2123,8 @@
         switch (def.as) {
         case 'handler':
             return def.bus+"('"+def.key+"')."+def.method+' = '+f_string
-        case 'fetch callback':
-                return 'fetch('+def.key+', '+f_string+')'
+        case 'get callback':
+                return 'get('+def.key+', '+f_string+')'
         case 'reactive':
             return "reactive('"+f_string+"')"
         default:
@@ -2135,7 +2135,7 @@
     function deps (key) {
         // First print out everything waiting for it to pub
         var result = 'Deps: ('+key+') fires into:'
-        var pubbers = bindings(key, 'on_save')
+        var pubbers = bindings(key, 'on_set')
         if (pubbers.length === 0) result += ' nothing'
         for (var i=0; i<pubbers.length; i++)
             result += '\n  ' + funk_name(pubbers[i].func)
@@ -2176,12 +2176,12 @@
     }
 
     // Make these private methods accessible
-    var api = ['cache backup_cache fetch save forget del fire dirty fetch_once',
+    var api = ['cache backup_cache get set forget del fire dirty get_once',
                'subspace bindings run_handler bind unbind reactive uncallback',
                'versions new_version',
                'make_proxy state sb',
                'funk_key funk_name funks key_id key_name id',
-               'pending_fetches fetches_in loading_keys loading once',
+               'pending_getes getes_in loading_keys loading once',
                'global_funk busses rerunnable_funks',
                'encode_field decode_field translate_keys apply_patch',
                'net_mount net_automount message_method',
@@ -2197,11 +2197,10 @@
     if (nodejs || !(document.querySelector('script[src*="client"][src$=".js"]')
                     .getAttribute('globals') == 'false')) {
         var globals = ['loading', 'clone', 'forget']
-        var client_globals = ['fetch', 'save', 'del', 'state']
+        var client_globals = ['get', 'set', 'del', 'state']
         if (!nodejs && Object.keys(busses).length == 0)
             globals = globals.concat(client_globals)
 
-        this.og_fetch = this.fetch    // Cause fetch() is actually a browser API now
         for (var i=0; i<globals.length; i++)
             this[globals[i]] = eval(globals[i])
     }

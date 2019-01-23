@@ -32,7 +32,7 @@
         // return new SockJS(url + '/' + unique_sockjs_string)
     }
     function client_creds (server_url) {
-        var me = bus.fetch('ls/me')
+        var me = bus.get('ls/me')
         bus.log('connect: me is', me)
         if (!me.client) {
             // Create a client id if we have none yet.
@@ -41,7 +41,7 @@
             me.client = c || (Math.random().toString(36).substring(2)
                               + Math.random().toString(36).substring(2)
                               + Math.random().toString(36).substring(2))
-            bus.save(me)
+            bus.set(me)
         }
 
         set_cookie('client', me.client)
@@ -60,31 +60,31 @@
         var bus = this
         bus.log(this)
 
-        // Fetch returns the value immediately in a save
-        // Saves are queued up, to store values with a delay, in batch
-        var saves_are_pending = false
-        var pending_saves = {}
+        // Get returns the value immediately in a set
+        // Sets are queued up, to store values with a delay, in batch
+        var sets_are_pending = false
+        var pending_sets = {}
 
-        function save_the_pending_saves() {
-            bus.log('localstore: saving', pending_saves)
-            for (var k in pending_saves)
-                localStorage.setItem(k, JSON.stringify(pending_saves[k]))
-            saves_are_pending = false
+        function set_the_pending_sets() {
+            bus.log('localstore: saving', pending_sets)
+            for (var k in pending_sets)
+                localStorage.setItem(k, JSON.stringify(pending_sets[k]))
+            sets_are_pending = false
         }
 
-        bus(prefix).to_fetch = function (key) {
+        bus(prefix).to_get = function (key) {
             var result = localStorage.getItem(key)
             return result ? JSON.parse(result) : {key: key}
         }
-        bus(prefix).to_save = function (obj) {
+        bus(prefix).to_set = function (obj) {
             // Do I need to make this recurse into the object?
-            bus.log('localStore: on_save:', obj.key)
-            pending_saves[obj.key] = obj
-            if (!saves_are_pending) {
-                setTimeout(save_the_pending_saves, 50)
-                saves_are_pending = true
+            bus.log('localStore: on_set:', obj.key)
+            pending_sets[obj.key] = obj
+            if (!sets_are_pending) {
+                setTimeout(set_the_pending_sets, 50)
+                sets_are_pending = true
             }
-            bus.save.fire(obj)
+            bus.set.fire(obj)
             return obj
         }
         bus(prefix).to_delete = function (key) { localStorage.removeItem(key) }
@@ -117,16 +117,16 @@
         data = (data && JSON.parse(data)) || {key : key}
         // Then I would need to:
         //  - Change the key prefix
-        //  - Save this into the cache
+        //  - Set this into the cache
 
-        bus(prefix).to_save = function (obj) {
+        bus(prefix).to_set = function (obj) {
             window.history.replaceState(
                 '',
                 '',
                 document.location.origin
                     + document.location.pathname
                     + escape('?'+key+'='+JSON.stringify(obj)))
-            bus.save.fire(obj)
+            bus.set.fire(obj)
         }
     }
 
@@ -136,7 +136,7 @@
             this(function () {
                 var re = new RegExp(".*/" + prefix + "/(.*)")
                 var file = window.location.href.match(re)[1]
-                var code = bus.fetch('/code/invisible.college/' + file).code
+                var code = bus.get('/code/invisible.college/' + file).code
                 if (!code) return
                 if (first_time) {first_time = false; return}
                 var old_scroll_position = window.pageYOffset
@@ -180,7 +180,7 @@
             function add_shortcut (obj, shortcut_name, to_key) {
                 delete obj[shortcut_name]
                 Object.defineProperty(obj, shortcut_name, {
-                    get: function () { return bus.fetch(to_key) },
+                    get: function () { return bus.get(to_key) },
                     configurable: true })
             }
             add_shortcut(this, 'local', this.key)
@@ -201,7 +201,7 @@
                             && typeof this.props[k] === 'object'
                             && this.props[k].key)
                             
-                            bus.fetch(this.props[k].key)
+                            bus.get(this.props[k].key)
                     
                     // Call the renderer!
                     return orig_render.apply(this, arguments)
@@ -359,7 +359,7 @@
     var loaded_from_file_url = window.location.href.match(/^file:\/\//)
     window.statebus_server = window.statebus_server ||
         script_elem().getAttribute('server') ||
-        (loaded_from_file_url ? 'https://stateb.us:3006' : '/')
+        (loaded_from_file_url ? 'https://stateb.us:3007' : '/')
     window.statebus_backdoor = window.statebus_backdoor ||
         script_elem().getAttribute('backdoor')
     var react_render
@@ -384,15 +384,15 @@
         }
         bus.net_automount()
 
-        // bus('*').to_save = function (obj) { bus.save.fire(obj) }
-        bus('/new/*').to_save = function (o) {
+        // bus('*').to_set = function (obj) { bus.set.fire(obj) }
+        bus('/new/*').to_set = function (o) {
             if (o.key.split('/').length > 3) return
 
             var old_key = o.key
             o.key = old_key + '/' + Math.random().toString(36).substring(2,12)
             statebus.cache[o.key] = o
             delete statebus.cache[old_key]
-            bus.save(o)
+            bus.set(o)
         }
         load_coffee()
 
@@ -516,7 +516,7 @@
             for (var i=0; i<arguments.length; i++) {
                 args.push(arguments[i])
                 if (arguments[i].state)
-                    args[i].src = 'data:;base64,' + fetch(args[i].state)._
+                    args[i].src = 'data:;base64,' + get(args[i].state)._
             }
             return og_img.apply(this, args)
         }
