@@ -291,7 +291,7 @@ function import_server (bus, options)
             } else
                 var client = master
 
-            var our_getes_in = {}  // Every key that this socket has geted
+            var subscriptions_to_us = {}  // Every key that this socket has gotton
             log('sockjs_s: New connection from', conn.remoteAddress)
             function sockjs_pubber (obj, t) {
                 // log('sockjs_pubber:', obj, t)
@@ -345,11 +345,11 @@ function import_server (bus, options)
 
                 switch (method) {
                 case 'get':
-                    our_getes_in[message.get] = true
+                    subscriptions_to_us[message.get] = true
                     client.get(message.get, sockjs_pubber)
                     break
                 case 'forget':
-                    delete our_getes_in[message.forget]
+                    delete subscriptions_to_us[message.forget]
                     client.forget(message.forget, sockjs_pubber)
                     break
                 case 'delete':
@@ -371,7 +371,7 @@ function import_server (bus, options)
                                 {version: message.version,
                                  parents: message.parents,
                                  patch: message.patch})
-                    if (our_getes_in[message.set.key]) {  // Store what we've seen if we
+                    if (subscriptions_to_us[message.set.key]) {  // Store what we've seen if we
                                                              // might have to publish it later
                         client.log('Adding', message.set.key+'#'+message.version,
                                    'to pubber!')
@@ -380,16 +380,16 @@ function import_server (bus, options)
                     break
                 }
 
-                // validate that our getes_in are all in the bus
-                for (var key in our_getes_in)
-                    if (!client.getes_in.has(key, master.funk_key(sockjs_pubber)))
+                // validate that our subscriptions_to_us are all in the bus
+                for (var key in subscriptions_to_us)
+                    if (!client.subscriptions_to_us.has(key, master.funk_key(sockjs_pubber)))
                         console.trace("***\n****\nFound errant key", key,
                                       'when receiving a sockjs', method, 'of', message)
                 //log('sockjs_s: done with message')
             })
             conn.on('close', function() {
                 log('sockjs_s: disconnected from', conn.remoteAddress, conn.id, client.id)
-                for (var key in our_getes_in)
+                for (var key in subscriptions_to_us)
                     client.forget(key, sockjs_pubber)
                 if (client_bus_func) {
                     delete connections[conn.id]; master.set(connections)
@@ -761,7 +761,7 @@ function import_server (bus, options)
                 obj = abstract_pointers(obj)
 
             if (opts.use_transactions && !open_transaction){
-                console.time('set db')
+                console.time('save db')
                 db.prepare('BEGIN TRANSACTION').run()
             }
 
@@ -774,12 +774,12 @@ function import_server (bus, options)
                     console.log('Committing transaction to database')
                     db.prepare('COMMIT').run()
                     open_transaction = false
-                    console.timeEnd('set db')
+                    console.timeEnd('save db')
                 })
             }
 
         }
-        if (opts.set_sync) {
+        if (opts.save_sync) {
             var old_route = bus.route
             bus.route = function (key, method, arg, t) {
                 if (method === 'to_set') on_set(arg)
@@ -791,7 +791,7 @@ function import_server (bus, options)
         }
         bus(prefix).to_delete = function (key) {
             if (opts.use_transactions && !open_transaction){
-                console.time('set db')
+                console.time('save db')
                 db.prepare('BEGIN TRANSACTION').run()
             }
             db.prepare('delete from cache where key = ?').run([key])
@@ -800,7 +800,7 @@ function import_server (bus, options)
                     console.log('committing')
                     db.prepare('COMMIT').run()
                     open_transaction = false
-                    console.timeEnd('set db')
+                    console.timeEnd('save db')
                 })
         }
 
@@ -888,7 +888,7 @@ function import_server (bus, options)
                 obj = abstract_pointers(obj)
 
             if (opts.use_transactions && !open_transaction){
-                console.time('set db')
+                console.time('save db')
                 db.prepare('BEGIN TRANSACTION').run()
             }
 
@@ -901,12 +901,12 @@ function import_server (bus, options)
                     console.log('Committing transaction to database')
                     db.prepare('COMMIT').run()
                     open_transaction = false
-                    console.timeEnd('set db')
+                    console.timeEnd('save db')
                 })
             }
 
         }
-        if (opts.set_sync) {
+        if (opts.save_sync) {
             var old_route = bus.route
             bus.route = function (key, method, arg, t) {
                 if (method === 'to_set') on_set(arg)
@@ -918,7 +918,7 @@ function import_server (bus, options)
         }
         bus(prefix).to_delete = function (key) {
             if (opts.use_transactions && !open_transaction){
-                console.time('set db')
+                console.time('save db')
                 db.prepare('BEGIN TRANSACTION').run()
             }
             db.prepare('delete from cache where key = ?').run([key])
@@ -927,7 +927,7 @@ function import_server (bus, options)
                     console.log('committing')
                     db.prepare('COMMIT').run()
                     open_transaction = false
-                    console.timeEnd('set db')
+                    console.timeEnd('save db')
                 })
         }
 
@@ -1603,7 +1603,7 @@ function import_server (bus, options)
         // Handlers!
         // ************************
 
-        // Geting the whole table, or a single row
+        // Getting the whole table, or a single row
         bus(table_name + '*').to_get = function (key, rest) {
             if (rest === '')
                 // Return the whole table
@@ -1771,7 +1771,7 @@ function import_server (bus, options)
 
         // Current User
         client('current_user').to_get = function (k) {
-            client.log('* geting: current_user')
+            client.log('* getting: current_user')
             if (!conn.client) return
             var u = master.get('logged_in_clients')[conn.client]
             u = u && user_obj(u.key, true)
@@ -1862,7 +1862,7 @@ function import_server (bus, options)
                 }
             }
 
-            t.reget()
+            t.dirty()
         }
         client('current_user').to_delete = function () {}
 
@@ -1967,9 +1967,9 @@ function import_server (bus, options)
 
             master.set(u)
         }
-        client('user/*').to_get = function user_geter (k) {
+        client('user/*').to_get = function user_getter (k) {
             var c = client.get('current_user')
-            client.log('* geting:', k, 'as', c.user)
+            client.log('* getting:', k, 'as', c.user)
 
             // Users have closet space at /user/<name>/*
             if (k.match(closet_space_key)) {
@@ -1979,7 +1979,7 @@ function import_server (bus, options)
                     client.log('hiding private closet data')
                     return {}
                 }
-                client.log('geting closet data')
+                client.log('getting closet data')
                 return client.clone(master.get(k))
             }
 
@@ -2102,9 +2102,9 @@ function import_server (bus, options)
                 count++
                 if (method === 'to_get')
                     bus.run_handler(function get_from_master (k) {
-                        // console.log('DEFAULT GETing', k)
+                        // console.log('DEFAULT GETting', k)
                         var r = master_bus.get(k)
-                        // console.log('DEFAULT GETed', r)
+                        // console.log('DEFAULT GETted', r)
                         bus.set.fire(r, {version: master_bus.versions[r.key]})
                         }, method, arg)
                 else if (method === 'to_set')
@@ -2214,15 +2214,15 @@ function import_server (bus, options)
         bus.http.use('/'+state_path, require('express').static(full_file_path))
     },
 
-    // Installs a GET handler at route that gets state from a geter function
+    // Installs a GET handler at route that gets state from a getter function
     // Note: Makes too many textbusses.  Should re-use one.
-    http_serve: function http_serve (route, geter) {
+    http_serve: function http_serve (route, getter) {
         var textbus = require('./statebus')()
         textbus.label = 'textbus'
         var watched = new Set()
         textbus('*').to_get = (filename, old) => {
             return {etag: Math.random() + '',
-                    _: geter(filename)}
+                    _: getter(filename)}
         }
         bus.http.get(route, (req, res) => {
             var path = req.path

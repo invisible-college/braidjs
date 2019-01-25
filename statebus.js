@@ -36,7 +36,7 @@
 
         if (called_from_reactive_funk)
             funk.has_seen(bus, key, versions[key])  // Maybe this line should go below, in the existing "if (called_from_reactive_funk) {" ??
-        getes_in.add(key, funk_key(funk))
+        subscriptions_to_us.add(key, funk_key(funk))
         if (to_be_forgotten[key]) {
             clearTimeout(to_be_forgotten[key])
             delete to_be_forgotten[key]
@@ -44,19 +44,19 @@
 
         bind(key, 'on_set', funk)
 
-        // ** Call geters upstream **
+        // ** Call getters upstream **
 
-        // TODO: checking getes_out[] doesn't count keys that we got which
+        // TODO: checking subscriptions_by_us[] doesn't count keys that we got which
         // arrived nested within a bigger object, because we never explicity
-        // geted those keys.  But we don't need to get them now cause we
+        // got those keys.  But we don't need to get them now cause we
         // already have them.
-        var to_geters = 0
-        if (!getes_out[key])
-            to_geters = bus.route(key, 'to_get', key)
+        var to_getters = 0
+        if (!subscriptions_by_us[key])
+            to_getters = bus.route(key, 'to_get', key)
 
         // Now there might be a new value pubbed onto this bus.
         // Or there might be a pending get.
-        // ... or there weren't any geters upstream.
+        // ... or there weren't any getters upstream.
 
 
         // ** Return a value **
@@ -71,7 +71,7 @@
         // handler.  If there's a pending get, then it'll get called later.
         // If there was a to_get, then it already got called.  Otherwise,
         // let's call it now.
-        else if (!pending_getes[key] && to_geters === 0) {
+        else if (!pending_gets[key] && to_getters === 0) {
             // TODO: my intuition suggests that we might prefer to
             // delay this .on_set getting called in a
             // setTimeout(f,0), to be consistent with other calls to
@@ -86,9 +86,12 @@
         get(key, cb2)
     }
     get.once = get_once
-    var pending_getes = {}
-    var getes_out = {}                // Maps `key' to `func' iff we've geted `key'
-    var getes_in = new One_To_Many()  // Maps `key' to `pub_funcs' subscribed to our key
+    var pending_gets = {}
+    var gets_in = new One_To_Many()  // Maps `key' to `pub_funcs' subscribed to our key
+    var gets_out = {}                // Maps `key' to `func' iff we've got `key'
+
+    var subscriptions_to_us = new One_To_Many()  // Maps `key' to `pub_funcs' subscribed to our key
+    var subscriptions_by_us = {}                 // Maps `key' to `func' iff we've got `key'
 
     var currently_saving
     function set (obj, t) {
@@ -167,17 +170,17 @@
                     color = grey
                     icon = 'x'
                     if (t.to_get)
-                        message = (t.m) || 'Geted ' + bus + "('"+obj.key+"')"
+                        message = (t.m) || 'Got ' + bus + "('"+obj.key+"')"
                     if (t.version) message += ' [' + t.version + ']'
                     statelog(obj.key, color, icon, message)
                     return
                 }
 
                 color = red, icon = '•'
-                if (t.to_get || pending_getes[obj.key]) {
+                if (t.to_get || pending_gets[obj.key]) {
                     color = green
                     icon = '^'
-                    message = add_diff_msg((t.m)||'Geted '+bus+"('"+obj.key+"')",
+                    message = add_diff_msg((t.m)||'Got '+bus+"('"+obj.key+"')",
                                            obj)
                     if (t.version) message += ' [' + t.version + ']'
                 }
@@ -190,7 +193,7 @@
         // Recursively add all of obj, and its sub-objects, into the cache
         var modified_keys = update_cache(obj, cache)
 
-        delete pending_getes[obj.key]
+        delete pending_gets[obj.key]
 
         if ((executing_funk !== global_funk) && executing_funk.loading()) {
             abort_changes(modified_keys)
@@ -340,7 +343,7 @@
     }
 
     function changed (object) {
-        return pending_getes[object.key]
+        return pending_gets[object.key]
             || !       cache.hasOwnProperty(object.key)
             || !backup_cache.hasOwnProperty(object.key)
             || !(deep_equals(object, backup_cache[object.key]))
@@ -364,26 +367,26 @@
         //log('forget:', key, funk_name(set_handler), funk_name(executing_funk))
         set_handler = set_handler || executing_funk
         var fkey = funk_key(set_handler)
-        //console.log('Getes in is', getes_in.hash)
-        if (!getes_in.has(key, fkey)) {
+        //console.log('Gets in is', subscriptions_to_us.hash)
+        if (!subscriptions_to_us.has(key, fkey)) {
             console.error("***\n****\nTrying to forget lost key", key,
                           'from', funk_name(set_handler), fkey,
-                          "that hasn't geted that key.",
-                          funks[getes_in.get(key)[0]],
-                          funks[getes_in.get(key)[0]] && funks[getes_in.get(key)[0]].statebus_id
+                          "that hasn't got that key.",
+                          funks[subscriptions_to_us.get(key)[0]],
+                          funks[subscriptions_to_us.get(key)[0]] && funks[subscriptions_to_us.get(key)[0]].statebus_id
                          )
             console.trace()
             return
             // throw Error('asdfalsdkfajsdf')
         }
 
-        getes_in.delete(key, fkey)
+        subscriptions_to_us.delete(key, fkey)
         unbind(key, 'on_set', set_handler)
 
         // If this is the last handler listening to this key, then we can
         // delete the cache entry, send a forget upstream, and de-activate the
-        // .on_get handler.
-        if (!getes_in.has_any(key)) {
+        // .to_get handler.
+        if (!subscriptions_to_us.has_any(key)) {
             clearTimeout(to_be_forgotten[key])
             to_be_forgotten[key] = setTimeout(function () {
                 // Send a forget upstream
@@ -391,10 +394,10 @@
 
                 // Delete the cache entry...?
                 // delete cache[key]
-                delete getes_out[key]
+                delete subscriptions_by_us[key]
                 delete to_be_forgotten[key]
 
-                // Todo: deactivate any reactive .on_get handler, or
+                // Todo: deactivate any reactive .to_get handler, or
                 // .on_set handler.
             }, 200)
 
@@ -445,16 +448,16 @@
     }
 
     var changed_keys = new Set()
-    var dirty_geters = new Set()
+    var dirty_getters = new Set()
     function dirty (key, t) {
         statelog(key, brown, '*', bus + ".dirty('"+key+"')")
         bogus_check(key)
 
         // Find any .to_get, and mark as dirty so that it re-runs
         var found = false
-        if (getes_out.hasOwnProperty(key))
-            for (var i=0; i<getes_out[key].length; i++) {
-                dirty_geters.add(funk_key(getes_out[key][i]))
+        if (subscriptions_by_us.hasOwnProperty(key))
+            for (var i=0; i<subscriptions_by_us[key].length; i++) {
+                dirty_getters.add(funk_key(subscriptions_by_us[key][i]))
                 found = true
             }
         clean_timer = clean_timer || setTimeout(clean)
@@ -471,7 +474,7 @@
     }
 
     function clean () {
-        // 1. Collect all functions for all keys and dirtied geters
+        // 1. Collect all functions for all keys and dirtied getters
         var dirty_funks = new Set()
         for (var b in busses) {
             var fs = busses[b].rerunnable_funks()
@@ -506,9 +509,9 @@
     function rerunnable_funks () {
         var result = []
         var keys = changed_keys.values()
-        var geters = dirty_geters.values()
+        var getters = dirty_getters.values()
 
-        //log(bus+' Cleaning up!', keys, 'keys, and', geters.length, 'geters')
+        //log(bus+' Cleaning up!', keys, 'keys, and', getters.length, 'getters')
         for (var i=0; i<keys.length; i++) {          // Collect all keys
             // if (to_be_forgotten[keys[i]])
             //     // Ignore changes to keys that have been forgotten, but not
@@ -519,8 +522,8 @@
                 var f = fs[j].func
                 if (f.react) {
                     // Skip if it's already up to date
-                    var v = f.geted_keys[JSON.stringify([this.id, keys[i]])]
-                    //log('re-run:', keys[i], f.statebus_id, f.geted_keys)
+                    var v = f.subscribed_to_keys[JSON.stringify([this.id, keys[i]])]
+                    //log('re-run:', keys[i], f.statebus_id, f.subscribed_to_keys)
                     if (v && v.indexOf(versions[keys[i]]) !== -1) {
                         log('skipping', funk_name(f), 'already at version', versions[keys[i]], 'proof:', v)
                         continue
@@ -540,11 +543,11 @@
                 result.push(funk_key(f))
             }
         }
-        for (var i=0; i<geters.length; i++)        // Collect all geters
-            result.push(geters[i])
+        for (var i=0; i<getters.length; i++)        // Collect all getters
+            result.push(getters[i])
 
         changed_keys.clear()
-        dirty_geters.clear()
+        dirty_getters.clear()
 
         //log('found', result.length, 'funks to re run')
 
@@ -627,7 +630,7 @@
         else
             handlers.add(method + ' ' + key, funk_key(func))
 
-        // Now check if the method is a get and there's a geted
+        // Now check if the method is a get and there's a gotton
         // key in this space, and if so call the handler.
     }
     function unbind (key, method, funk, allow_wildcards) {
@@ -695,7 +698,7 @@
             binding = options.binding
 
         // When we first run a handler (e.g. a get or set), we wrap it in a
-        // reactive() funk that calls it with its arg.  Then if it getes or
+        // reactive() funk that calls it with its arg.  Then if it gets or
         // sets, it'll register a .on_set handler with this funk.
 
         // Is it reactive already?  Let's distinguish it.
@@ -800,7 +803,7 @@
                 }
             t.return = t.done
             if (method === 'to_set')
-                t.reget = function () { bus.dirty(arg.key) }
+                t.dirty = function () { bus.dirty(arg.key) }
 
             // Then in run_handler, we'll call it with:
             var args = []
@@ -876,13 +879,13 @@
             bind(key, 'to_forget', handler_done)
 
             // // Check if it's doubled-up
-            // if (getes_out[key])
+            // if (subscriptions_by_us[key])
             //     console.error('Two .to_get functions are running on the same key',
-            //                   key+'!', funk_name(funck), funk_name(getes_out[key]))
+            //                   key+'!', funk_name(funck), funk_name(subscriptions_by_us[key]))
 
-            getes_out[key] = getes_out[key] || []
-            getes_out[key].push(f)   // Record active to_get handler
-            pending_getes[key] = f   // Record that the get is pending
+            subscriptions_by_us[key] = subscriptions_by_us[key] || []
+            subscriptions_by_us[key].push(f)   // Record active to_get handler
+            pending_gets[key] = f   // Record that the get is pending
         }
 
         if (just_make_it)
@@ -913,7 +916,7 @@
     // Reactive functions
     //
     // We wrap any function with a reactive wrapper that re-calls it whenever
-    // state it's geted changes.
+    // state it's gotton changes.
 
     if (!global_funk) {
         global_funk = reactive(function global_funk () {})
@@ -987,14 +990,14 @@
 
         funk.func = func  // just for debugging
         funk.called_directly = true
-        funk.geted_keys = {} // maps [bus,key] to version
+        funk.subscribed_to_keys = {} // maps [bus,key] to version
                                // version will be undefined until loaded
         funk.abortable_keys = []
         funk.has_seen = function (bus, key, version) {
             //console.log('depend:', bus, key, versions[key])
             var bus_key = JSON.stringify([bus.id, key])
             var seen_versions =
-                this.geted_keys[bus_key] = this.geted_keys[bus_key] || []
+                this.subscribed_to_keys[bus_key] = this.subscribed_to_keys[bus_key] || []
             seen_versions.push(version)
             if (versions.length > 10) versions.shift()
         }
@@ -1010,28 +1013,28 @@
         }
         funk.forget = function () {
             // Todo: This will bug out if an .on_set handler for a key also
-            // getes that key once, and then doesn't get it again, because
-            // when it getes the key, that key will end up being a
-            // geted_key, and will then be forgotten as soon as the funk is
+            // gets that key once, and then doesn't get it again, because
+            // when it gets the key, that key will end up being a
+            // subscribed_to_key, and will then be forgotten as soon as the funk is
             // re-run, and doesn't get it again, and the fact that it is
             // defined as an .on_set .on_set handler won't matter anymore.
 
             if (funk.statebus_id === 'global funk') return
 
-            for (var hash in funk.geted_keys) {
+            for (var hash in funk.subscribed_to_keys) {
                 var tmp = JSON.parse(hash),
                     bus = busses[tmp[0]], key = tmp[1]
                 if (bus)  // Cause it might have been deleted
                     bus.forget(key, funk)
             }
-            funk.geted_keys = {}
+            funk.subscribed_to_keys = {}
         }
         funk.loading = function () {
-            for (var hash in funk.geted_keys) {
+            for (var hash in funk.subscribed_to_keys) {
                 var tmp = JSON.parse(hash),
                     bus = busses[tmp[0]], key = tmp[1]
                 if (bus  // Cause it might have been deleted
-                    && bus.pending_getes[key])
+                    && bus.pending_gets[key])
                     return true
             }
             return false
@@ -1045,9 +1048,9 @@
 
     function loading_keys (keys) {
         // Do any of these keys have outstanding gets?
-        //console.log('Loading: pending_keys is', pending_getes)
+        //console.log('Loading: pending_keys is', pending_gets)
         for (var i=0; i<keys.length; i++)
-            if (pending_getes[keys[i]]) return true
+            if (pending_gets[keys[i]]) return true
         return false
     }
 
@@ -1280,7 +1283,7 @@
         } else {
             // We are getting from the Root
             o = bus.get(k)
-            // console.log('pget: geted', k, 'and got', o)
+            // console.log('pget: got', k, 'and got', o)
             base = o
             if (bus.validate(o, {key: '*', '?_': '*'})) {
                 // console.log('pget: jumping into the _')
@@ -1530,7 +1533,7 @@
         var sock
         var attempts = 0
         var outbox = []
-        var client_geted_keys = new bus.Set()
+        var keys_we_GETted = new bus.Set()
         var heartbeat
         if (url[url.length-1]=='/') url = url.substr(0,url.length-1)
         function nlog (s) {
@@ -1572,9 +1575,9 @@
             send(x)
         }
         bus(prefix).to_get  = function (key) { send({get: key}),
-                                                 client_geted_keys.add(key) }
+                                                 keys_we_GETted.add(key) }
         bus(prefix).to_forget = function (key) { send({forget: key}),
-                                                 client_geted_keys.delete(key) }
+                                                 keys_we_GETted.delete(key) }
         bus(prefix).to_delete = function (key) { send({'delete': key}) }
 
         function connect () {
@@ -1614,7 +1617,7 @@
                 if (attempts > 0) {
                     // Then we need to reget everything, cause it
                     // might have changed
-                    var keys = client_geted_keys.values()
+                    var keys = keys_we_GETted.values()
                     for (var i=0; i<keys.length; i++)
                         send({get: keys[i]})
                 }
@@ -1637,7 +1640,7 @@
                 peers[url].connected = false
                 set(peers)
 
-                // Remove all getes and forgets from queue
+                // Remove all gets and forgets from queue
                 var new_outbox = []
                 var bad = {'get':1, 'forget':1}
                 for (var i=0; i<outbox.length; i++)
@@ -2181,7 +2184,7 @@
                'versions new_version',
                'make_proxy state sb',
                'funk_key funk_name funks key_id key_name id',
-               'pending_getes getes_in loading_keys loading once',
+               'pending_gets subscriptions_to_us loading_keys loading once',
                'global_funk busses rerunnable_funks',
                'encode_field decode_field translate_keys apply_patch',
                'net_mount net_automount message_method',

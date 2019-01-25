@@ -188,7 +188,7 @@ test(function serve_options (done) {
     var b = require('../statebus').serve({
         port: 31829,
         //file_store: false,
-        file_store: {filename: filename, set_delay: 0, backup_dir: backups},
+        file_store: {filename: filename, save_delay: 0, backup_dir: backups},
         certs: {private_key: certs+'/pk', certificate: certs+'/cert'},
     })
 
