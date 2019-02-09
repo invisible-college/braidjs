@@ -277,7 +277,8 @@
 
         function replace_link (item) {
             return (typeof item === "object") && item !== null &&
-                item.key && cache[item.key]
+                item.hasOwnProperty('key') &&
+                (cache[item.key] = cache[item.key] || {key: item.key})
         }
 
         console.assert(obj && obj.key)

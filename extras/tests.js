@@ -451,6 +451,32 @@ test(function get_remote (done) {
     }, 50)
 })
 
+test(function links (done) {
+    bus('link_son').to_get = (t)=> {
+        setTimeout(_=>t.return({val: 'little billy'}))
+    }
+    bus.set({key: 'link_mom', val: {key: 'link_son'}})
+    delay(50, _=> assert(bus.deep_equals(bus.cache.link_mom,
+                                         {key: 'link_mom', val:
+                                          {key: 'link_son'}})))
+    var mom
+    delay(50, _=> mom = bus.get('link_mom'))
+    delay(50, _=> assert(bus.deep_equals(mom, {key: 'link_mom', val:
+                                               {key: 'link_son'}})))
+    var sonny
+    delay(50, _=> (bus.honk = true, sonny = bus.get('link_son')))
+    delay(50, _=> {
+        assert(bus.deep_equals(sonny, {key: 'link_son', val: 'little billy'}))
+        log({momval: mom.val, sonny})
+        assert(mom.val === sonny)
+        assert(mom.val === bus.cache.link_son)
+        log({mom})
+        assert(bus.deep_equals(mom, {key: 'link_mom', val:
+                                     {key: 'link_son', val: 'little billy'}}))
+        done()
+    })
+})
+
 // Multiple batched fires might trigger duplicate reactions
 test(function duplicate_fires (done) {
     var calls = new Set()
