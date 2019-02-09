@@ -284,7 +284,7 @@
         console.assert(obj && obj.key)
         bogus_check(obj.key)
 
-        if (!cache[obj.key])
+        if (!cache.hasOwnProperty([obj.key]))
             // This object is new.
             cache[obj.key] = {key: obj.key}
 
@@ -1907,13 +1907,13 @@
         // The except_for function can stop us short
         if (except_for) {
             var e = except_for(item)
-            if (e) return e
+            if (e && e !== null) return e
         }
 
         if (Array.isArray(item)) {
             item = item.slice()
             for (var i=0; i<item.length; i++)
-                item[i] = clone(item[i])
+                item[i] = clone(item[i], except_for)
             return item
         }
 
@@ -1926,7 +1926,7 @@
                 return new Date(item)
             else {
                 var result = {}
-                for (var i in item) result[i] = clone(item[i])
+                for (var i in item) result[i] = clone(item[i], except_for)
                 return result
             }
         }

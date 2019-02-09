@@ -477,6 +477,23 @@ test(function links (done) {
     })
 })
 
+test(function hide_passwords (done) {
+    var master = require('../statebus')()
+    var client = require('../statebus')()
+    var users = {key: 'users', val: [
+        {key: 'user/1', pass: 'hide me', name: 'blob'},
+        {key: 'user/2', pass: 'hideme2', name: 'fart'}
+    ]}
+    master.set(users)
+    log('users:', master.cache.users)
+    assert(!master.cache.users.val[0].pass)
+    assert(!master.cache.users.val[1].pass)
+    master.set.r(users)
+    assert(master.cache.users.val[0].pass)
+    assert(master.cache.users.val[1].pass)
+    done()
+})
+
 // Multiple batched fires might trigger duplicate reactions
 test(function duplicate_fires (done) {
     var calls = new Set()
