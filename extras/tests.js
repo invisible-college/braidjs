@@ -1135,24 +1135,24 @@ test(function setup_server (done) {
 })
 
 test(function login (done) {
-    s.set({key: 'users',
-            all: [ {  key: 'user/1',
-                      name: 'mike',
-                      email: 'toomim@gmail.com',
-                      admin: true,
-                      pass: '$2a$10$Ti7BgAZS8sB0Z62o2NKsIuCdmU3q9xP7jexVccTcG19Y8qpBpl/1y' }
+    s.set.r({key: 'users',
+             all: [ {  key: 'user/1',
+                       name: 'mike',
+                       email: 'toomim@gmail.com',
+                       admin: true,
+                       pass: '$2a$10$Ti7BgAZS8sB0Z62o2NKsIuCdmU3q9xP7jexVccTcG19Y8qpBpl/1y' }
 
-                   ,{ key: 'user/2',
-                      name: 'j',
-                      email: 'jtoomim@gmail.com',
-                      admin: true,
-                      pass: '$2a$10$Ti7BgAZS8sB0Z62o2NKsIuCdmU3q9xP7jexVccTcG19Y8qpBpl/1y' }
+                    ,{ key: 'user/2',
+                       name: 'j',
+                       email: 'jtoomim@gmail.com',
+                       admin: true,
+                       pass: '$2a$10$Ti7BgAZS8sB0Z62o2NKsIuCdmU3q9xP7jexVccTcG19Y8qpBpl/1y' }
 
-                   ,{ key: 'user/3',
-                      name: 'boo',
-                      email: 'boo@gmail.com',
-                      admin: false,
-                      pass: '$2a$10$4UTjzf5OOGdkrCEsT.hO/.csKqf7u8mZ23ZT6stamBAWNV7u5WJuu' } ] })
+                    ,{ key: 'user/3',
+                       name: 'boo',
+                       email: 'boo@gmail.com',
+                       admin: false,
+                       pass: '$2a$10$4UTjzf5OOGdkrCEsT.hO/.csKqf7u8mZ23ZT6stamBAWNV7u5WJuu' } ] })
 
     c(function () {
         var u = c.get('/current_user')
@@ -1167,14 +1167,14 @@ test(function login (done) {
     var u = c.get('/current_user')
     u.login_as = {name: 'mike', pass: 'yeah'}
     log('Logging in')
-    c.set(u)
+    c.set.r(u)
 })
 
 test(function wrong_password (done) {
     var u = c.get('/current_user')
     assert(u.logged_in && u.user.name == 'mike')
     u.login_as = {name: 'j', pass: 'nah'}
-    c.set(u)
+    c.set.r(u)
     setTimeout(function () {
         assert(!u.login_as, 'Aborted login needs to abort')
         log('Good, the login failed.')
@@ -1195,7 +1195,7 @@ test(function create_account (done) {
         case 1:
             log('In 1   -    Logging out')
             assert(u.logged_in, '1 not logged in')
-            u.logout = true; c.set(u)
+            u.logout = true; c.set.r(u)
             break
         case 2: break
         case 3:
@@ -1209,13 +1209,13 @@ test(function create_account (done) {
             log('In 3   -    Creating bob, logging in as bob')
             assert(!u.logged_in, '3 logged in')
             u.create_account = {name: 'bob', email: 'b@o.b', pass: 'boob'}
-            c.set(u)
+            c.set.r(u)
 
             // Note: I hope this done line isn't necessary in the future!
             delete u.create_account
 
             u.login_as = {name: 'bob', pass: 'boob'}
-            c.set(u)
+            c.set.r(u)
             break
         case 4: break
         case 5:

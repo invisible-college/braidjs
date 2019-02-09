@@ -111,7 +111,7 @@
         t.version = t.version || new_version()
 
         if ((executing_funk !== global_funk) && executing_funk.loading()) {
-            abort_changes([obj.key])
+            abort_change(obj.key)
             return
         }
 
@@ -144,6 +144,15 @@
         // seeing if there are zero, I could just make a to_set handler that
         // is shadowed by other handlers if I can get later handlers to shadow
         // earlier ones.
+    }
+    set.r = function set_r (obj, t) {
+        // We don't actually need a map that returns the whole tree here, just
+        // a deep_each that applies set to every object with a key.
+        deep_map(obj, function (o) {
+            if (o && typeof o === 'object' && o.key)
+                set(o, t)
+            return o
+        })
     }
     set.fire = fire
     function fire (obj, t) {
@@ -188,35 +197,37 @@
                 statelog(obj.key, color, icon, message)
             }
         }
-        // Then we're gonna fire!
 
-        // Recursively add all of obj, and its sub-objects, into the cache
-        var modified_keys = update_cache(obj, cache)
+        // Now let's get ready to fire!
 
+        if (!changed(obj)) { // Unless nothing has actually changed
+            log('Boring modified key', obj.key)
+            delete pending_gets[obj.key]
+            return
+        }
+
+        // Ok now, set the cache!
+        update_cache(obj, cache)
         delete pending_gets[obj.key]
 
+        // Now that we've figured that out, we might abort
         if ((executing_funk !== global_funk) && executing_funk.loading()) {
-            abort_changes(modified_keys)
-        } else {
-            // Let's publish these changes!
-
-            // These objects must replace their backups
-            update_cache(obj, backup_cache)
-
-            // And we mark each changed key as changed so that
-            // reactions happen to them
-            for (var i=0; i < modified_keys.length; i++) {
-                var key = modified_keys[i]
-                var parents = [versions[key]]   // Not stored yet
-                versions[key] = t.version
-                mark_changed(key, t)
-            }
+            abort_change(obj.key)
+            return
         }
+
+        // Ok, we haven't aborted.  Let's cement the backup.
+        update_cache(obj, backup_cache)
+
+        // And mark the key as changed so that reactions happen to it
+        var parents = [versions[obj.key]]   // Not stored yet
+        versions[obj.key] = t.version
+        mark_changed(obj.key, t)
     }
 
     set.abort = function (obj, t) {
         if (!obj) console.error('No obj', obj)
-        abort_changes([obj.key])
+        abort_change(obj.key)
         statelog(obj.key, yellow, '<', 'Aborting ' + obj.key)
         mark_changed(obj.key, t)
     }
@@ -260,9 +271,38 @@
     var backup_cache = {}
     var versions = {}
 
-    // Folds object into the cache recursively and returns the keys
-    // for all mutated staet
-    function update_cache (object, cache) {
+    function update_cache (obj, cache) {
+        // Go through each field (which will eventually only be 'val')
+        // And delete stuff that's gone, and clone stuff that's new
+
+        function replace_link (item) {
+            return (typeof item === "object") && item !== null &&
+                item.key && cache[item.key]
+        }
+
+        console.assert(obj && obj.key)
+        bogus_check(obj.key)
+
+        if (!cache[obj.key])
+            // This object is new.
+            cache[obj.key] = {key: obj.key}
+
+        if (obj !== cache[obj.key]) {
+            // Mutate cache to match the object.
+
+            // First, add/update missing/changed fields to cache
+            for (var k in obj)
+                cache[obj.key][k] = clone(obj[k], replace_link)
+
+            // Then delete extra fields from cache
+            for (var k in cache[obj.key])
+                if (!obj.hasOwnProperty(k))
+                    delete cache[obj.key][k]
+        }
+    }
+
+
+    function update_cache_old (object, cache) {
         var modified_keys = new Set()
         function update_object (obj) {
 
@@ -348,9 +388,8 @@
             || !backup_cache.hasOwnProperty(object.key)
             || !(deep_equals(object, backup_cache[object.key]))
     }
-    function abort_changes (keys) {
-        for (var i=0; i < keys.length; i++)
-            update_cache(backup_cache[keys[i]], cache)
+    function abort_change (key) {
+        update_cache(backup_cache[key], cache)
     }
 
 
@@ -414,7 +453,7 @@
         bogus_check(key)
 
         if ((executing_funk !== global_funk) && executing_funk.loading()) {
-            abort_changes([key])
+            abort_change(key)
             return
         }
 
@@ -606,10 +645,11 @@
                 handler.args['t'] = i; break
             case 'o':
             case 'obj':
-            case 'val':
             case 'new':
             case 'New':
                 handler.args['obj'] = i; break
+            case 'val':
+                handler.args['val'] = i; break
             case 'old':
                 handler.args['old'] = i; break
             }
@@ -825,6 +865,8 @@
                     args[func.args[k]] = t; break
                 case 'obj':
                     args[func.args[k]] = arg.key ? arg : bus.cache[arg]; break
+                case 'val':
+                    args[func.args[k]] = arg.key ? arg.val : bus.cache[arg].val; break
                 case 'old':
                     var key = key_arg()
                     args[func.args[k]] = bus.cache[key] || (bus.cache[key] = {key:key})
@@ -957,7 +999,7 @@
             } catch (e) {
                 if (e.message === 'Maximum call stack size exceeded') {
                     console.error(e)
-                    process.exit()
+                    if (nodejs) process.exit()
                 }
                 //executing_funk = null // Or should this be last_executing_funk?
                 if (funk.loading()) return null
@@ -1057,6 +1099,7 @@
     // Tells you whether the currently executing funk is loading
     function loading () { return executing_funk.loading() }
 
+    // Is anyone using this function below?
     bus.default = function () {
         bus.deep_map(arguments, function (o) {
             if (o.key && !(bus.cache.hasOwnProperty(o.key)))
@@ -1533,7 +1576,7 @@
         var sock
         var attempts = 0
         var outbox = []
-        var keys_we_GETted = new bus.Set()
+        var keys_we_got = new bus.Set()
         var heartbeat
         if (url[url.length-1]=='/') url = url.substr(0,url.length-1)
         function nlog (s) {
@@ -1575,9 +1618,9 @@
             send(x)
         }
         bus(prefix).to_get  = function (key) { send({get: key}),
-                                                 keys_we_GETted.add(key) }
+                                                 keys_we_got.add(key) }
         bus(prefix).to_forget = function (key) { send({forget: key}),
-                                                 keys_we_GETted.delete(key) }
+                                                 keys_we_got.delete(key) }
         bus(prefix).to_delete = function (key) { send({'delete': key}) }
 
         function connect () {
@@ -1617,7 +1660,7 @@
                 if (attempts > 0) {
                     // Then we need to reget everything, cause it
                     // might have changed
-                    var keys = keys_we_GETted.values()
+                    var keys = keys_we_got.values()
                     for (var i=0; i<keys.length; i++)
                         send({get: keys[i]})
                 }
@@ -1739,18 +1782,6 @@
     }
 
 
-    // ******************
-    // JSON encoding
-    //  - Does both escape/unescape keys, and wraps/unwraps pointers
-    //  - Will use in both network communication and file_store
-    function json_encode (highlevel_obj) {
-        // Encodes fields, and converts {_key: 's'} to pointer to {key: 's'...}
-    }
-    function json_decode (lowlevel_obj) {
-        // Decodes fields, and converts pointer to {key: 's'...} to {_key: 's'}
-    }
-
-
     function key_id(string) { return string.match(/\/?[^\/]+\/(\d+)/)[1] }
     function key_name(string) { return string.match(/\/?([^\/]+).*/)[1] }
 
@@ -1861,12 +1892,22 @@
     //         if (obj.hasOwnProperty(attr)) copy[attr] = obj[attr]
     //     return copy
     // }
-    function clone(item) {
+    function clone(item, except_for) {
+        // The except_for function, if specified, will stop the recursive
+        // clone at any subtree it returns trueish at, and use the value
+        // returned instead.
+
         if (!item               // null, undefined values check
             || item instanceof Number
             || item instanceof String
             || item instanceof Boolean)
             return item
+
+        // The except_for function can stop us short
+        if (except_for) {
+            var e = except_for(item)
+            if (e) return e
+        }
 
         if (Array.isArray(item)) {
             item = item.slice()

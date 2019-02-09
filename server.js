@@ -1765,6 +1765,7 @@ function import_server (bus, options)
             users.all = users.all || []
             users.all.push(new_account)
             passes[login] = {user: new_account.key, pass: new_account.pass}
+            master.set(new_account)
             master.set(users)
             master.set(passes)
         }
