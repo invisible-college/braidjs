@@ -491,6 +491,12 @@ test(function hide_passwords (done) {
     master.set.r(users)
     assert(master.cache.users.val[0].pass)
     assert(master.cache.users.val[1].pass)
+    client.set({key: 'user/1', name: 'blob'})
+    client.set(master.get('users'))
+    assert(!client.get('users')[0].pass)
+    assert(!client.get('users')[1].pass)
+    assert(client.get('users')[0].name)
+    assert(!client.get('users')[1].name)
     done()
 })
 
