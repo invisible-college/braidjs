@@ -2111,7 +2111,7 @@ function import_server (bus, options)
                 else if (method === 'to_set')
                     bus.run_handler(function set_to_master (o, t) {
                         // console.log('DEFAULT ROUTE', t)
-                        master_bus.set(bus.clone(o), t)
+                        master_bus.set(o, t)
                     }, method, arg, {t: t})
                 else if (method == 'to_delete')
                     bus.run_handler(function delete_from_master (k, t) {
