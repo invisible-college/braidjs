@@ -473,8 +473,16 @@ test(function links (done) {
         log({mom})
         assert(bus.deep_equals(mom, {key: 'link_mom', val:
                                      {key: 'link_son', val: 'little billy'}}))
-        done()
     })
+
+    // Test recursive setting with empty links.
+    delay(50, _=> bus.set.r({key: 'link_mom', val: {key: 'link_son'}}))
+    delay(50, _=> assert(bus.cache.link_mom.val.val, 'link went away!'))
+
+    // Test setting an empty link now.  It should do nothing, I think.
+    // delay(50, _=> bus.set({key: 'link_mom'}))
+    // delay(50, _=> assert(bus.cache.link_mom.val))
+    delay(50, _=> done())
 })
 
 test(function hide_passwords (done) {
@@ -1205,9 +1213,15 @@ test(function login (done) {
                        pass: '$2a$10$4UTjzf5OOGdkrCEsT.hO/.csKqf7u8mZ23ZT6stamBAWNV7u5WJuu' } ] })
 
     c(function () {
+        c.honk = true
         var u = c.get('/current_user')
+        log('current user is now', u)
         if (u.logged_in) {
+            c.get(u.user)
             log('Yay! We are logged in as', u.user.name)
+            log('Loading is', c.loading(), 'and u is', c.get(u.user.key),
+                'and c is', c.label)
+            assert(u.user.name, 'Missing username')
             forget()
             setTimeout(function () {done()})
         } else
@@ -1259,18 +1273,21 @@ test(function create_account (done) {
             log('In 3   -    Creating bob, logging in as bob')
             assert(!u.logged_in, '3 logged in')
             u.create_account = {name: 'bob', email: 'b@o.b', pass: 'boob'}
-            c.set.r(u)
+            c.set(u)
 
             // Note: I hope this done line isn't necessary in the future!
             delete u.create_account
 
             u.login_as = {name: 'bob', pass: 'boob'}
-            c.set.r(u)
+            c.set(u)
             break
         case 4: break
         case 5:
             log('In 5   -    Logging out')
             assert(u.logged_in)
+            c.get(u.user)
+            break
+        case 6:
             assert(u.user.name === 'bob'
                    && u.user.email === 'b@o.b'
                    && u.user.pass === undefined
@@ -1281,15 +1298,15 @@ test(function create_account (done) {
             u.logout = true; c.set(u)
             log('Done 5')
             break
-        case 6: break
-        case 7:
+        case 7: break
+        case 8:
             log('In 7   -    Logging back in as boob')
             assert(!u.logged_in, '7. still logged in, as', u)
             u.login_as = {name: 'bob', pass:'boob'}
             c.set(u)
             break
-        case 8: break
-        case 9:
+        case 9: break
+        case 10:
             log('In 9   -    Forget and finish.')
             assert(u.logged_in, '9 not logged in')
             forget()

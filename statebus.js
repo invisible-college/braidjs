@@ -154,8 +154,25 @@
             return o
         })
     }
+    fire.r = function fire_r (obj, t) {
+        deep_map(obj, function (o) {
+            if (o && typeof o === 'object' && o.key)
+                fire(o, t)
+            return o
+        })
+    }
     set.fire = fire
     function fire (obj, t) {
+        // Here's a stupid hack to make it backwards compatible with state
+        // that puts fields directly on the {key: ...} object itself:
+        if (// If obj is like {key: ...}
+            obj.key && Object.keys(obj).length === 1
+            // And setting something like {key: .., val: ..}
+            && cache[obj.key] && cache[obj.key].val !== undefined
+            && Object.keys(cache[obj.key]).length == 2)
+            // Then do nothing
+            return
+
         t = t || {}
         // Make sure it has a version.
         t.version = t.version || new_version()
@@ -1719,7 +1736,7 @@
                                                message.patch[0])
                     if (!(t.version||t.parents||t.patch))
                         t = undefined
-                    bus.set.fire(add_prefixes(message.set), t)
+                    bus.set.fire.r(add_prefixes(message.set), t)
                 } catch (err) {
                     console.error('Received bad network message from '
                                   +url+': ', event.data, err)
