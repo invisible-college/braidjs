@@ -294,7 +294,7 @@ function import_server (bus, options)
             var subscriptions_to_us = {}  // Every key that this socket has gotton
             log('sockjs_s: New connection from', conn.remoteAddress)
             function sockjs_pubber (obj, t) {
-                // log('sockjs_pubber:', obj, t)
+                log('sockjs_pubber:', obj, t)
                 var msg = {set: obj}
                 if (t.version) msg.version = t.version
                 if (t.parents) msg.parents = t.parents
@@ -312,7 +312,7 @@ function import_server (bus, options)
                 log('sockjs_s: SENT a', msg, 'to client')
             }
             conn.on('data', function(message) {
-                log('sockjs_s:', message)
+                // log('sockjs_s:', message)
                 try {
                     message = JSON.parse(message)
                     var method = bus.message_method(message)
@@ -661,192 +661,12 @@ function import_server (bus, options)
     },
 
     lazy_sqlite_store: function lazy_sqlite_store (opts) {
-        var prefix = '*'
-        if (!opts) opts = {}
-        if (!opts.filename) opts.filename = 'db.sqlite'
-
-        // Load the db on startup
-        try {
-            var db = bus.sqlite_store_db || new (require('better-sqlite3'))(opts.filename)
-            bus.sqlite_store_db = db
-            db.pragma('journal_mode = WAL')
-            db.prepare('create table if not exists cache (key text primary key, obj text)').run()
-
-            bus.log('Read ' + opts.filename)
-        } catch (e) {
-            console.error(e)
-            console.error('Bad sqlite db')
-        }
-
-        // Add get handler
-        bus(prefix).to_get = function (key, t) {
-            var x = db.prepare('select * from cache where key = ?').get([key])
-            t.done(x ? JSON.parse(x.obj) : {})
-        }
-
-        // Add set handlers
-        function on_set (obj) {
-            db.prepare('replace into cache (key, obj) values (?, ?)').run(
-                [obj.key, JSON.stringify(obj)])
-        }
-        on_set.priority = true
-        bus(prefix).on_set = on_set
-
-        bus(prefix).to_delete = function (key) {
-            db.prepare('delete from cache where key = ?').run([key])
-        }
-
-        // Rotating backups
-        setInterval(
-            // Copy the current db over backups/db.<curr_date> every minute
-            function backup_db() {
-                if (opts.backups === false) return
-                var backup_dir = opts.backup_dir || 'backups'
-                if (fs.existsSync && !fs.existsSync(backup_dir))
-                    fs.mkdirSync(backup_dir)
-
-                var d = new Date()
-                var y = d.getYear() + 1900
-                var m = d.getMonth() + 1
-                if (m < 10) m = '0' + m
-                var day = d.getDate()
-                if (day < 10) day = '0' + day
-                var date = y + '-' + m + '-' + day
-
-                require('child_process').execFile(
-                    'sqlite3',
-                    [opts.filename, '.backup '+"'"+backup_dir+'/'+opts.filename+'.'+date+"'"])
-            },
-            1000 * 60 // Every minute
-        )
+        opts.lazy = true
+        bus.sqlite_store(opts)
     },
-    fast_load_sqlite_store: function sqlite_store (opts) { // just one line different from sqlite_store (bus.set.fire replaced)
-        var prefix = '*'
-        var open_transaction = null
-
-        if (!opts) opts = {}
-        if (!opts.filename) opts.filename = 'db.sqlite'
-
-        // Load the db on startup
-        try {
-            var db = bus.sqlite_store_db || new (require('better-sqlite3'))(opts.filename)
-            bus.sqlite_store_db = db
-            db.pragma('journal_mode = WAL')
-            db.prepare('create table if not exists cache (key text primary key, obj text)').run()
-            var temp_db = {}
-
-            for (var row of db.prepare('select * from cache').iterate()) {
-                var obj = JSON.parse(row.obj)
-                temp_db[obj.key] = obj
-            }
-						console.log("DONE LOADING", Object.keys(temp_db).length)
-            if (global.pointerify)
-                temp_db = inline_pointers(temp_db)
-
-            for (var key in temp_db)
-                if (temp_db.hasOwnProperty(key)){
-                    // bus.set.fire(temp_db[key])
-                    bus.cache[key] = temp_db[key]
-                    temp_db[key] = undefined
-                }
-            bus.log('Read ' + opts.filename)
-        } catch (e) {
-            console.error(e)
-            console.error('Bad sqlite db')
-        }
-
-        // Add set handlers
-        function on_set (obj) {
-            if (global.pointerify)
-                obj = abstract_pointers(obj)
-
-            if (opts.use_transactions && !open_transaction){
-                console.time('save db')
-                db.prepare('BEGIN TRANSACTION').run()
-            }
-
-            db.prepare('replace into cache (key, obj) values (?, ?)').run(
-                [obj.key, JSON.stringify(obj)])
-
-            if (opts.use_transactions && !open_transaction) {
-
-                open_transaction = setTimeout(function(){
-                    console.log('Committing transaction to database')
-                    db.prepare('COMMIT').run()
-                    open_transaction = false
-                    console.timeEnd('save db')
-                })
-            }
-
-        }
-        if (opts.save_sync) {
-            var old_route = bus.route
-            bus.route = function (key, method, arg, t) {
-                if (method === 'to_set') on_set(arg)
-                return old_route(key, method, arg, t)
-            }
-        } else {
-            on_set.priority = true
-            bus(prefix).on_set = on_set
-        }
-        bus(prefix).to_delete = function (key) {
-            if (opts.use_transactions && !open_transaction){
-                console.time('save db')
-                db.prepare('BEGIN TRANSACTION').run()
-            }
-            db.prepare('delete from cache where key = ?').run([key])
-            if (opts.use_transactions && !open_transaction)
-                open_transaction = setTimeout(function(){
-                    console.log('committing')
-                    db.prepare('COMMIT').run()
-                    open_transaction = false
-                    console.timeEnd('save db')
-                })
-        }
-
-        // Replaces every nested keyed object with {_key: <key>}
-        function abstract_pointers (o) {
-            o = bus.clone(o)
-            var result = {}
-            for (var k in o)
-                result[k] = bus.deep_map(o[k], (o) => {
-                    if (o && o.key) return {_key: o.key}
-                    else return o
-                })
-            return result
-        }
-        // ...and the inverse
-        function inline_pointers (db) {
-            return bus.deep_map(db, (o) => {
-                if (o && o._key)
-                    return db[o._key]
-                else return o
-            })
-        }
-
-        // Rotating backups
-        setInterval(
-            // Copy the current db over backups/db.<curr_date> every minute
-            function backup_db() {
-                if (opts.backups === false) return
-                var backup_dir = opts.backup_dir || 'backups'
-                if (fs.existsSync && !fs.existsSync(backup_dir))
-                    fs.mkdirSync(backup_dir)
-
-                var d = new Date()
-                var y = d.getYear() + 1900
-                var m = d.getMonth() + 1
-                if (m < 10) m = '0' + m
-                var day = d.getDate()
-                if (day < 10) day = '0' + day
-                var date = y + '-' + m + '-' + day
-
-                require('child_process').execFile(
-                    'sqlite3',
-                    [opts.filename, '.backup '+"'"+backup_dir+'/'+opts.filename+'.'+date+"'"])
-            },
-            1000 * 60 // Every minute
-        )
+    fast_load_sqlite_store: function sqlite_store (opts) {
+        opts.fast_load = true
+        bus.sqlite_store(opts)
     },
     sqlite_store: function sqlite_store (opts) {
         var prefix = '*'
@@ -861,26 +681,39 @@ function import_server (bus, options)
             bus.sqlite_store_db = db
             db.pragma('journal_mode = WAL')
             db.prepare('create table if not exists cache (key text primary key, obj text)').run()
-            var temp_db = {}
+            if (!opts.lazy) {
+                var temp_db = {}
 
-            for (var row of db.prepare('select * from cache').iterate()) {
-                var obj = JSON.parse(row.obj)
-                temp_db[obj.key] = obj
-            }
-
-            if (global.pointerify)
-                temp_db = inline_pointers(temp_db)
-
-            for (var key in temp_db)
-                if (temp_db.hasOwnProperty(key)){
-                    bus.set.fire(temp_db[key])
-                    temp_db[key] = undefined
+                for (var row of db.prepare('select * from cache').iterate()) {
+                    var obj = JSON.parse(row.obj)
+                    temp_db[obj.key] = obj
                 }
+
+                if (global.pointerify)
+                    temp_db = inline_pointers(temp_db)
+
+                for (var key in temp_db)
+                    if (temp_db.hasOwnProperty(key)){
+                        if (opts.fast_load)
+                            bus.cache[key] = temp_db[key]
+                        else
+                            bus.set.fire(temp_db[key])
+                        temp_db[key] = undefined
+                    }
+            }
             bus.log('Read ' + opts.filename)
         } catch (e) {
             console.error(e)
             console.error('Bad sqlite db')
         }
+
+        if (opts.lazy)
+            // Add get handler
+            bus(prefix).to_get = function (key, t) {
+                var x = db.prepare('select * from cache where key = ?').get([key])
+                t.done(x ? JSON.parse(x.obj) : {})
+            }
+            
 
         // Add set handlers
         function on_set (obj) {
@@ -896,7 +729,6 @@ function import_server (bus, options)
                 [obj.key, JSON.stringify(obj)])
 
             if (opts.use_transactions && !open_transaction) {
-
                 open_transaction = setTimeout(function(){
                     console.log('Committing transaction to database')
                     db.prepare('COMMIT').run()
@@ -904,7 +736,6 @@ function import_server (bus, options)
                     console.timeEnd('save db')
                 })
             }
-
         }
         if (opts.save_sync) {
             var old_route = bus.route

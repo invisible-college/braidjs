@@ -280,10 +280,10 @@ test(function url_translation (done) {
         [{key: 'a'}, {key: '/a'}],
         [{key: 'a', f: '3'}, {key: '/a', f: '3'}],
         [{a: {b: {key: 'a'}}}, {a: {b: {key: '/a'}}}],
-        [{a: {b: {_key: ['a', 'b']}}}, {a: {b: {_key: ['/a', '/b']}}}],
-        [{a: {b: {bombs_key: ['a', 1]}}}, {a: {b: {bombs_key: ['/a', 1]}}}],
-        [{a: {b: {_key: ['a', {_key: 'b'}]}}}, {a: {b: {_key: ['/a', {_key: '/b'}]}}}],
-        [{a: ['a', {_key: 'b'}]}, {a: ['a', {_key: '/b'}]}],
+        //[{a: {b: {_key: ['a', 'b']}}}, {a: {b: {_key: ['/a', '/b']}}}],
+        //[{a: {b: {bombs_key: ['a', 1]}}}, {a: {b: {bombs_key: ['/a', 1]}}}],
+        //[{a: {b: {_key: ['a', {_key: 'b'}]}}}, {a: {b: {_key: ['/a', {_key: '/b'}]}}}],
+        //[{a: ['a', {_key: 'b'}]}, {a: ['a', {_key: '/b'}]}],
     ]
     for (var i=0; i<tests.length; i++) {
         log('Testing', i, JSON.stringify(tests[i][0]))
@@ -1193,6 +1193,7 @@ test(function setup_server (done) {
 })
 
 test(function login (done) {
+    log("## Let's set the users! ##")
     s.set.r({key: 'users',
              all: [ {  key: 'user/1',
                        name: 'mike',
@@ -1213,13 +1214,16 @@ test(function login (done) {
                        pass: '$2a$10$4UTjzf5OOGdkrCEsT.hO/.csKqf7u8mZ23ZT6stamBAWNV7u5WJuu' } ] })
 
     c(function () {
-        c.honk = true
+        log('## Are we logged in now??? ##   loading:', loading.verbose())
+        // c.honk = true
+        // s.honk = true
         var u = c.get('/current_user')
         log('current user is now', u)
         if (u.logged_in) {
             c.get(u.user)
             log('Yay! We are logged in as', u.user.name)
-            log('Loading is', c.loading(), 'and u is', c.get(u.user.key),
+            log('Loading is', c.loading.verbose(),
+                'and u is', c.get(u.user.key),
                 'and c is', c.label)
             assert(u.user.name, 'Missing username')
             forget()
@@ -1227,11 +1231,11 @@ test(function login (done) {
         } else
             log("Ok... we aren't logged in yet.  We be patient.")
     })
-    // c.honk = user0.honk = true
+    c.honk = true
+    log("## Let's log in now! ##")
     var u = c.get('/current_user')
     u.login_as = {name: 'mike', pass: 'yeah'}
-    log('Logging in')
-    c.set.r(u)
+    c.set(u)
 })
 
 test(function wrong_password (done) {

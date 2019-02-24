@@ -167,7 +167,8 @@
         // that puts fields directly on the {key: ...} object itself:
         if (// If obj is like {key: ...}
             obj.key && Object.keys(obj).length === 1
-            // And setting something like {key: .., val: ..}
+
+            // And replacing something like {key: .., val: ..}
             && cache[obj.key] && cache[obj.key].val !== undefined
             && Object.keys(cache[obj.key]).length == 2)
             // Then do nothing
@@ -307,6 +308,12 @@
 
         if (obj !== cache[obj.key]) {
             // Mutate cache to match the object.
+
+            // TODO:
+            //
+            //   Now that the entire value of objects is within the 'val'
+            //   field, the following code can just replace the old 'val' with
+            //   the new 'val', instead of bothering doing any looping.
 
             // First, add/update missing/changed fields to cache
             for (var k in obj)
@@ -1100,6 +1107,18 @@
             return false
         }
 
+        funk.loading.verbose = function () {
+            var result = []
+            for (var hash in funk.subscribed_to_keys) {
+                var tmp = JSON.parse(hash),
+                    bus = busses[tmp[0]], key = tmp[1]
+                if (bus  // Cause it might have been deleted
+                    && bus.pending_gets[key])
+                    result.push(key)
+            }
+            return result
+        }
+
         // for backwards compatibility
         funk.is_loading = funk.loading
 
@@ -1116,6 +1135,7 @@
 
     // Tells you whether the currently executing funk is loading
     function loading () { return executing_funk.loading() }
+    loading.verbose = function () { return executing_funk.loading.verbose() }
 
     // Is anyone using this function below?
     bus.default = function () {
@@ -1736,7 +1756,7 @@
                                                message.patch[0])
                     if (!(t.version||t.parents||t.patch))
                         t = undefined
-                    bus.set.fire.r(add_prefixes(message.set), t)
+                    bus.set.fire(add_prefixes(message.set), t)
                 } catch (err) {
                     console.error('Received bad network message from '
                                   +url+': ', event.data, err)
@@ -1780,18 +1800,14 @@
         // Recurse through each property on objects
         else if (typeof obj === 'object')
             for (var k in obj) {
-                if (k === 'key' || /.*_key$/.test(k))
-                    if (typeof obj[k] == 'string')
-                        obj[k] = f(obj[k])
-                    else if (Array.isArray(obj[k]))
-                        for (var i=0; i < obj[k].length; i++) {
-                            if (typeof obj[k][i] === 'string')
-                                obj[k][i] = f(obj[k][i])
-                        }
+                if (k === 'key')
+                    obj[k] = f(obj[k])
                 translate_keys(obj[k], f)
             }
         return obj
     }
+
+    // DEPRECATED: remove once we have a new proxy implementation
     function encode_field(k) {
         return k.replace(/(_(keys?|time)?$|^key$)/, '$1_')
     }
@@ -1800,8 +1816,8 @@
     }
 
 
-    function key_id(string) { return string.match(/\/?[^\/]+\/(\d+)/)[1] }
-    function key_name(string) { return string.match(/\/?([^\/]+).*/)[1] }
+    // function key_id(string) { return string.match(/\/?[^\/]+\/(\d+)/)[1] }
+    // function key_name(string) { return string.match(/\/?([^\/]+).*/)[1] }
 
     // ******************
     // Applying Patches, aka Diffs
@@ -2242,10 +2258,10 @@
                'subspace bindings run_handler bind unbind reactive uncallback',
                'versions new_version',
                'make_proxy state sb',
-               'funk_key funk_name funks key_id key_name id',
+               'funk_key funk_name funks id',
                'pending_gets subscriptions_to_us loading_keys loading once',
                'global_funk busses rerunnable_funks',
-               'encode_field decode_field translate_keys apply_patch',
+               'translate_keys apply_patch',
                'net_mount net_automount message_method',
                'parse Set One_To_Many clone extend deep_map deep_equals prune validate sorta_diff log deps'
               ].join(' ').split(' ')
