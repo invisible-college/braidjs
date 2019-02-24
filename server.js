@@ -679,9 +679,18 @@ function import_server (bus, options)
         try {
             var db = bus.sqlite_store_db || new (require('better-sqlite3'))(opts.filename)
             bus.sqlite_store_db = db
+            bus.sqlite_store.load_all = load_all
+            bus.sqlite_store.all_keys = all_keys
+
             db.pragma('journal_mode = WAL')
             db.prepare('create table if not exists cache (key text primary key, obj text)').run()
-            if (!opts.lazy) {
+
+            function all_keys () {
+                var result = []
+                for (var row of db.prepare('select key from cache').iterate())
+                    result.push(row.key)
+            }
+            function load_all () {
                 var temp_db = {}
 
                 for (var row of db.prepare('select * from cache').iterate()) {
@@ -701,6 +710,8 @@ function import_server (bus, options)
                         temp_db[key] = undefined
                     }
             }
+            if (!opts.lazy) load_all()
+
             bus.log('Read ' + opts.filename)
         } catch (e) {
             console.error(e)
