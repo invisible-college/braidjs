@@ -661,11 +661,13 @@ function import_server (bus, options)
     },
 
     lazy_sqlite_store: function lazy_sqlite_store (opts) {
+        if (!opts) opts = {}
         opts.lazy = true
         bus.sqlite_store(opts)
     },
     fast_load_sqlite_store: function sqlite_store (opts) {
-        opts.fast_load = true
+        if (!opts) opts = {}
+        opts.dont_fire = true
         bus.sqlite_store(opts)
     },
     sqlite_store: function sqlite_store (opts) {
@@ -689,8 +691,9 @@ function import_server (bus, options)
                 var result = []
                 for (var row of db.prepare('select key from cache').iterate())
                     result.push(row.key)
+                return result
             }
-            function load_all () {
+            function load_all (options) {
                 var temp_db = {}
 
                 for (var row of db.prepare('select * from cache').iterate()) {
@@ -702,15 +705,15 @@ function import_server (bus, options)
                     temp_db = inline_pointers(temp_db)
 
                 for (var key in temp_db)
-                    if (temp_db.hasOwnProperty(key)){
-                        if (opts.fast_load)
+                    if (temp_db.hasOwnProperty(key)) {
+                        if (opts.dont_fire)
                             bus.cache[key] = temp_db[key]
                         else
                             bus.set.fire(temp_db[key])
                         temp_db[key] = undefined
                     }
             }
-            if (!opts.lazy) load_all()
+            if (!opts.lazy) load_all(opts)
 
             bus.log('Read ' + opts.filename)
         } catch (e) {
