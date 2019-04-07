@@ -46,12 +46,12 @@
 
         // ** Call getters upstream **
 
-        // TODO: checking subscriptions_by_us[] doesn't count keys that we got which
+        // TODO: checking subscriptions_from_us[] doesn't count keys that we got which
         // arrived nested within a bigger object, because we never explicity
         // got those keys.  But we don't need to get them now cause we
         // already have them.
         var to_getters = 0
-        if (!subscriptions_by_us[key])
+        if (!subscriptions_from_us[key])
             to_getters = bus.route(key, 'to_get', key)
 
         // Now there might be a new value pubbed onto this bus.
@@ -91,7 +91,7 @@
     var gets_out = {}                // Maps `key' to `func' iff we've got `key'
 
     var subscriptions_to_us = new One_To_Many()  // Maps `key' to `pub_funcs' subscribed to our key
-    var subscriptions_by_us = {}                 // Maps `key' to `func' iff we've got `key'
+    var subscriptions_from_us = {}                 // Maps `key' to `func' iff we've got `key'
 
     var currently_saving
     function set (obj, t) {
@@ -458,7 +458,7 @@
 
                 // Delete the cache entry...?
                 // delete cache[key]
-                delete subscriptions_by_us[key]
+                delete subscriptions_from_us[key]
                 delete to_be_forgotten[key]
 
                 // Todo: deactivate any reactive .to_get handler, or
@@ -519,9 +519,9 @@
 
         // Find any .to_get, and mark as dirty so that it re-runs
         var found = false
-        if (subscriptions_by_us.hasOwnProperty(key))
-            for (var i=0; i<subscriptions_by_us[key].length; i++) {
-                dirty_getters.add(funk_key(subscriptions_by_us[key][i]))
+        if (subscriptions_from_us.hasOwnProperty(key))
+            for (var i=0; i<subscriptions_from_us[key].length; i++) {
+                dirty_getters.add(funk_key(subscriptions_from_us[key][i]))
                 found = true
             }
         clean_timer = clean_timer || setTimeout(clean)
@@ -946,12 +946,12 @@
             bind(key, 'to_forget', handler_done)
 
             // // Check if it's doubled-up
-            // if (subscriptions_by_us[key])
+            // if (subscriptions_from_us[key])
             //     console.error('Two .to_get functions are running on the same key',
-            //                   key+'!', funk_name(funck), funk_name(subscriptions_by_us[key]))
+            //                   key+'!', funk_name(funck), funk_name(subscriptions_from_us[key]))
 
-            subscriptions_by_us[key] = subscriptions_by_us[key] || []
-            subscriptions_by_us[key].push(f)   // Record active to_get handler
+            subscriptions_from_us[key] = subscriptions_from_us[key] || []
+            subscriptions_from_us[key].push(f)   // Record active to_get handler
             pending_gets[key] = f   // Record that the get is pending
         }
 
@@ -2259,7 +2259,7 @@
                'versions new_version',
                'make_proxy state sb',
                'funk_key funk_name funks id',
-               'pending_gets subscriptions_to_us loading_keys loading once',
+               'pending_gets subscriptions_to_us subscriptions_from_us loading_keys loading once',
                'global_funk busses rerunnable_funks',
                'translate_keys apply_patch',
                'net_mount net_automount message_method',
