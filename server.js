@@ -155,9 +155,7 @@ function import_server (bus, options)
         cbus.master = bus
 
         // Log in as the client
-        cbus.serves_auth({client: req.client,
-                          remoteAddress: req.connection.remoteAddress},
-                         bus)
+        cbus.serves_auth({remoteAddress: req.connection.remoteAddress}, bus)
         bus.options.client(cbus)
         cbus.set({key: 'current_user', client: req.client})
         return cbus
@@ -597,6 +595,9 @@ function import_server (bus, options)
             // Rotating backups
             setInterval(
                 // This copies the current db over backups/db.<curr_date> every minute
+                //
+                // Note: in future we might want to use db.backup():
+                // https://github.com/JoshuaWise/better-sqlite3/blob/master/docs/api.md#backupdestination-options---promise
                 function backup_db() {
                     if (!db_is_ok || !backup_dir) return
                     if (fs.existsSync && !fs.existsSync(backup_dir))
@@ -1639,9 +1640,11 @@ function import_server (bus, options)
                 client.client_id = o.client
                 client.client_ip = conn.remoteAddress
 
-                var connections = master.get('connections')
-                connections[conn.id].user = master.get('logged_in_clients')[conn.client]
-                master.set(connections)
+                if (conn.id) {
+                    var connections = master.get('connections')
+                    connections[conn.id].user = master.get('logged_in_clients')[conn.client]
+                    master.set(connections)
+                }
             }
             else {
                 if (o.create_account) {
@@ -1658,7 +1661,7 @@ function import_server (bus, options)
                     }
                 }
 
-                if (o.login_as) {
+                if (o.login_as && conn.id) {
                     // Then client is trying to log in
                     client.log('current_user: trying to log in')
                     var creds = o.login_as
@@ -1695,7 +1698,7 @@ function import_server (bus, options)
                     }
                 }
 
-                else if (o.logout) {
+                else if (o.logout && conn.id) {
                     client.log('current_user: logging out')
                     var clients = master.get('logged_in_clients')
                     var connections = master.get('connections')
