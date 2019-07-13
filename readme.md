@@ -1,6 +1,6 @@
 # Welcome to the Braid!
 
-These libraries upgrades your website to the [braid protocol](https://tools.ietf.org/html/draft-toomim-braid-00), which adds *synchronization* to HTTP.
+These libraries upgrade your website to the [braid protocol](https://tools.ietf.org/html/draft-toomim-braid-00), which adds *synchronization* to HTTP.
 
 This makes web programming much easier, and gives you the following magical features for free:
  - Collaborative editing
