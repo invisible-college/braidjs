@@ -9,7 +9,7 @@ This makes web programming much easier, and gives you the following magical feat
  - Delta-compressed network updates
  - Shareable synchronized state across websites
 
-We are intentionally keeping this readme short. Read more about braid at https://braid.news!
+*We intentionally keep this readme short.* Read more about braid at https://braid.news!
 
 ## How do I use this?
 
