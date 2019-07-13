@@ -1,11 +1,11 @@
-bus = require('../statebus')()
+bus = require('../braid')()
 util = require('util')
 fs = require('fs')
 bus.label = 'bus'
 statelog_indent++
 
 // Include the test functions
-var {test, run_tests, log, assert, delay} = require('../statebus').testing
+var {test, run_tests, log, assert, delay} = require('../braid').testing
 
 // Make sure we have all the npm packages installed
 try {
@@ -116,7 +116,7 @@ test(function applying_patches (done) {
 })
 
 test(function prune (done) {
-    var boose = require('../statebus')()
+    var boose = require('../braid')()
     boose.set({key: 'nark', _: 333666})
     var a = {key: 'funny',
              b: {key: 'farty', booger: 3}}
@@ -128,7 +128,7 @@ test(function prune (done) {
 })
 
 test(function auto_vars (done) {
-    var n = require('../statebus')()
+    var n = require('../braid')()
     n('r/*').to_get = function (rest, o) {return {rest: rest, o: o}}
     log(n.get('r/3'))
     assert(n.get('r/3').rest === '3')
@@ -185,7 +185,7 @@ test(function serve_options (done) {
         // fs.rmdirSync(certs)
     } catch (e) {log(e)}
 
-    var b = require('../statebus').serve({
+    var b = require('../braid').serve({
         port: 31829,
         //file_store: false,
         file_store: {filename: filename, save_delay: 0, backup_dir: backups},
@@ -197,7 +197,7 @@ test(function serve_options (done) {
 })
 
 test(function transactions (done) {
-    var bus = require('../statebus')()
+    var bus = require('../braid')()
     bus.honk = 'statelog'
     bus.label = 'tranny'
 
@@ -317,7 +317,7 @@ test(function basics (done) {
 
 // Multi-handlers
 test(function multiple_handlers1 (done) {
-    var cuss = require('../statebus')()
+    var cuss = require('../braid')()
     cuss('foo').to_get = () => {log('do nothing 1')}
     cuss('foo').to_get = () => {log('do nothing 2')}
     cuss('foo').to_get = () => (log('doing something'),{b: 3})
@@ -329,7 +329,7 @@ test(function multiple_handlers1 (done) {
 })
 
 test(function multiple_handlers2 (done) {
-    var cuss = require('../statebus')()
+    var cuss = require('../braid')()
     cuss('foo').to_set = (o) => {log('do nothing 1')}
     cuss('foo').to_set = (o) => {log('do nothing 2')}
     cuss('foo').to_set = (o) => {log('doin something'); cuss.set.fire(o)}
@@ -486,8 +486,8 @@ test(function links (done) {
 })
 
 test(function hide_passwords (done) {
-    var master = require('../statebus')()
-    var client = require('../statebus')()
+    var master = require('../braid')()
+    var client = require('../braid')()
     var users = {key: 'users', val: [
         {key: 'user/1', pass: 'hide me', name: 'blob'},
         {key: 'user/2', pass: 'hideme2', name: 'fart'}
@@ -747,7 +747,7 @@ test(function uncallback (done) {
 })
 
 test(function readfile (done) {
-    var b = require('../statebus')(),
+    var b = require('../braid')(),
         count = 0
 
     fs.writeFileSync('/tmp/blah', '1')
@@ -772,7 +772,7 @@ test(function readfile (done) {
 })
 
 test(function proxies (done) {
-    var bus = require('../statebus')()
+    var bus = require('../braid')()
     db = bus.sb
     db.foo.a = 3
     assert(db.foo.a == 3)
@@ -798,7 +798,7 @@ test(function proxies (done) {
 })
 
 test(function proxies2 (done) {
-    var bus = require('../statebus')()
+    var bus = require('../braid')()
     var state = bus.state
 
     assert(state.array === undefined)
@@ -1085,7 +1085,7 @@ test(function rollback_set (done) {
 })
 
 test(function rollback_abort (done) {
-    var bus = require('../statebus')()
+    var bus = require('../braid')()
     bus('foo').to_set = (o, t) => {t.abort()}
     bus(()=> {
         var o = bus.get('foo')
@@ -1139,8 +1139,8 @@ test(function requires (done) {
 })
 
 test(function default_route (done) {
-    var b1 = require('../statebus')()
-    var b2 = require('../statebus')()
+    var b1 = require('../braid')()
+    var b2 = require('../braid')()
     b1.shadows(b2)
     b2.set({key: 'foo', bar: 3})
     console.assert(b1.get('foo').bar)
@@ -1155,12 +1155,12 @@ test(function default_route (done) {
 })
 
 test(function setup_server (done) {
-    s = require('../statebus').serve({port: 3948, file_store: false})
+    s = require('../braid').serve({port: 3948, file_store: false})
     s.label = 's'
     log('Saving /far on server')
     s.set({key: 'far', away:'is this'})
 
-    c = require('../statebus')()
+    c = require('../braid')()
     c.label = 'c'
     c.ws_client('/*', 'statei://localhost:3948')
 
@@ -1325,17 +1325,17 @@ test(function create_account (done) {
 
 function connections_helper (done, port, options) {
     // Setup a server
-    var s = require('../statebus').serve({port: port,
+    var s = require('../braid').serve({port: port,
                                           file_store: false,
                                           connections: options})
     s.label = 's'
 
     // Connect two clients
-    var c1 = require('../statebus')()
+    var c1 = require('../braid')()
     c1.label = 'c1'
     c1.ws_client('/*', 'statei://localhost:' + port)
 
-    var c2 = require('../statebus')()
+    var c2 = require('../braid')()
     c2.label = 'c2'
     c2.ws_client('/*', 'statei://localhost:' + port)
 
@@ -1426,7 +1426,7 @@ test(function flashbacks (done) {
     var port = 3873
 
     // Setup a server
-    var s = require('../statebus').serve({port: port, file_store: false})
+    var s = require('../braid').serve({port: port, file_store: false})
     s.label = 's'
 
     s('x').to_set = (o, t) => {
@@ -1436,11 +1436,11 @@ test(function flashbacks (done) {
     }
 
     // Connect two clients
-    var c1 = require('../statebus')()
+    var c1 = require('../braid')()
     c1.label = 'c1'
     c1.ws_client('*', 'statei://localhost:' + port)
 
-    var c2 = require('../statebus')()
+    var c2 = require('../braid')()
     c2.label = 'c2'
     c2.ws_client('*', 'statei://localhost:' + port)
     
@@ -1559,12 +1559,12 @@ test(function email_read_permissions (done) {
 })
 
 test(function closet_space (done) {
-    var s = require('../statebus').serve({port: 3949,
+    var s = require('../braid').serve({port: 3949,
                                           file_store: false,
                                           client: (c)=>{c.honk=true}})
     s.label = 's'
 
-    var c = require('../statebus')()
+    var c = require('../braid')()
     c.label = 'c'
     c.ws_client('/*', 'statei://localhost:3949')
 

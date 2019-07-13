@@ -3,7 +3,7 @@
     if (typeof module != 'undefined') module.exports = definition()
     else if (typeof define == 'function' && typeof define.amd == 'object') define(definition)
     else this[name] = definition()
-}('statebus', function() {statelog_indent = 0; var busses = {}, executing_funk, global_funk, funks = {}, clean_timer, symbols, nodejs = typeof window === 'undefined'; function make_bus (options) {
+}('braid', function() {statelog_indent = 0; var busses = {}, executing_funk, global_funk, funks = {}, clean_timer, symbols, nodejs = typeof window === 'undefined'; function make_bus (options) {
     
 
     // ****************
@@ -255,7 +255,7 @@
         return (bus.label||(id+' ')) + (version_count++).toString(36)
     }
 
-    // Now create the statebus object
+    // Now create the braid object
     function bus (arg) {
         // Called with a function to react to
         if (typeof arg === 'function') {
@@ -437,7 +437,7 @@
                           'from', funk_name(set_handler), fkey,
                           "that hasn't got that key.",
                           funks[subscriptions_to_us.get(key)[0]],
-                          funks[subscriptions_to_us.get(key)[0]] && funks[subscriptions_to_us.get(key)[0]].statebus_id
+                          funks[subscriptions_to_us.get(key)[0]] && funks[subscriptions_to_us.get(key)[0]].braid_id
                          )
             console.trace()
             return
@@ -489,7 +489,7 @@
             // And go ahead and delete if there aren't any!
             delete cache[key]
 
-        // console.warn("Deleting " + key + "-- Statebus doesn't yet re-run functions subscribed to it, or update versions")
+        // console.warn("Deleting " + key + "-- Braid doesn't yet re-run functions subscribed to it, or update versions")
 
         // Todos:
         //
@@ -587,7 +587,7 @@
                 if (f.react) {
                     // Skip if it's already up to date
                     var v = f.subscribed_to_keys[JSON.stringify([this.id, keys[i]])]
-                    //log('re-run:', keys[i], f.statebus_id, f.subscribed_to_keys)
+                    //log('re-run:', keys[i], f.braid_id, f.subscribed_to_keys)
                     if (v && v.indexOf(versions[keys[i]]) !== -1) {
                         log('skipping', funk_name(f), 'already at version', versions[keys[i]], 'proof:', v)
                         continue
@@ -733,7 +733,7 @@
         for (var i=0; i < exacts.length; i++) {
             var f = funks[exacts[i]]
             if (!seen[funk_key(f)]) {
-                f.statebus_binding = {key:key, method:method}
+                f.braid_binding = {key:key, method:method}
                 result.push({method:method, key:key, func:f})
                 seen[funk_key(f)] = true
             }
@@ -747,7 +747,7 @@
             if (prefix === key.substr(0,prefix.length)     // If the prefix matches
                 && method === handler.method               // And it has the right method
                 && !seen[funk_key(handler.funk)]) {
-                handler.funk.statebus_binding = {key:handler.prefix, method:method}
+                handler.funk.braid_binding = {key:handler.prefix, method:method}
                 result.push({method:method, key:handler.prefix, func:handler.funk})
                 seen[funk_key(handler.funk)] = true
             }
@@ -989,7 +989,7 @@
         global_funk = reactive(function global_funk () {})
         global_funk.global_funk = true
         executing_funk = global_funk
-        funks[global_funk.statebus_id = 'global funk'] = global_funk
+        funks[global_funk.braid_id = 'global funk'] = global_funk
     }
 
     function reactive(func) {
@@ -1086,7 +1086,7 @@
             // re-run, and doesn't get it again, and the fact that it is
             // defined as an .on_set .on_set handler won't matter anymore.
 
-            if (funk.statebus_id === 'global funk') return
+            if (funk.braid_id === 'global funk') return
 
             for (var hash in funk.subscribed_to_keys) {
                 var tmp = JSON.parse(hash),
@@ -2077,7 +2077,7 @@
     }
 
     // This prune() function is a temporary workaround for dealing with nested
-    // objects in set() handlers, until we change statebus' behavior.  Right
+    // objects in set() handlers, until we change braid's behavior.  Right
     // now, it calls .to_set only on the top-level state.  But if that state
     // validates, it calls fire() on *every* level of state.  This means that
     // state changes can sneak inside.  Prune() will take out any changes from
@@ -2167,15 +2167,15 @@
         if (typeof obj == 'function')
             throw 'bus.validate() cannot validate functions'
         console.trace()
-        throw "You hit a Statebus bug! Tell the developers!"
+        throw "You hit a Braid bug! Tell the developers!"
     }
 
     function funk_key (funk) {
-        if (!funk.statebus_id) {
-            funk.statebus_id = Math.random().toString(36).substring(7)
-            funks[funk.statebus_id] = funk
+        if (!funk.braid_id) {
+            funk.braid_id = Math.random().toString(36).substring(7)
+            funks[funk.braid_id] = funk
         }
-        return funk.statebus_id
+        return funk.braid_id
     }
     function funk_keyr (funk) {
         while (funk.proxies_for) funk = funk.proxies_for
@@ -2248,7 +2248,7 @@
         if (!(key in bogus_keys))
             return
 
-        var msg = "Sorry, statebus.js currently prohibits use of the key \""+key+"\", and in fact all of these keys: " + Object.keys(bogus_keys).join(', ') + ".  This is because Javascript is kinda lame, and even empty objects like \"{}\" have the \""+key+"\" field defined on them.  Try typing this in your Javascript console: \"({}).constructor\" -- it returns a function instead of undefined!  We could work around it by meticulously replacing every \"obj[key]\" with \"obj.hasOwnProperty(key) && obj[key]\" in the statebus code, but that will make the source more difficult to understand.  So please contact us if this use-case is important for you, and we'll consider doing it.  We're hoping that, for now, our users don't need to use these keys."
+        var msg = "Sorry, braid.js currently prohibits use of the key \""+key+"\", and in fact all of these keys: " + Object.keys(bogus_keys).join(', ') + ".  This is because Javascript is kinda lame, and even empty objects like \"{}\" have the \""+key+"\" field defined on them.  Try typing this in your Javascript console: \"({}).constructor\" -- it returns a function instead of undefined!  We could work around it by meticulously replacing every \"obj[key]\" with \"obj.hasOwnProperty(key) && obj[key]\" in the braid code, but that will make the source more difficult to understand.  So please contact us if this use-case is important for you, and we'll consider doing it.  We're hoping that, for now, our users don't need to use these keys."
         console.error(msg)
         throw 'Invalid key'
     }

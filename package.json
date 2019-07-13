@@ -1,13 +1,13 @@
 {
-  "name": "statebus",
-  "version": "6.0.107",
-  "description": "Synchronize state.",
-  "main": "statebus.js",
+  "name": "braid",
+  "version": "7.0.0",
+  "description": "Synchronization for the Web",
+  "main": "braid.js",
   "scripts": {
     "test": "node extras/tests.js"
   },
   "author": "Michael Toomim",
-  "repository": "invisible-college/statebus",
+  "repository": "invisible-college/braid",
   "dependencies": {
     "bcrypt-nodejs": "0.0.3",
     "chokidar": "^1.7.0",

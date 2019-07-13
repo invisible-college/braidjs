@@ -1,5 +1,5 @@
 (function () {
-    var unique_sockjs_string = '_connect_to_statebus_'
+    var unique_sockjs_string = '_connect_to_braid_'
 
     // ****************
     // Connecting over the Network
@@ -93,7 +93,7 @@
         // Hm... this update stuff doesn't seem to work on file:/// urls in chrome
         function update (event) {
             bus.log('Got a localstorage update', event)
-            //this.get(event.key.substr('statebus '.length))
+            //this.get(event.key.substr('braid '.length))
         }
         if (window.addEventListener) window.addEventListener("storage", update, false)
         else                         window.attachEvent("onstorage", update)
@@ -157,7 +157,7 @@
     // ****************
     // Wrapper for React Components
 
-    // XXX Currently assumes there's a statebus named "bus" in global
+    // XXX Currently assumes there's a braid named "bus" in global
     // XXX scope.
 
     var components = {}                  // Indexed by 'component/0', 'component/1', etc.
@@ -282,7 +282,7 @@
         return result
     }
     window.React_View = React_View
-    if (window.statebus) window.statebus.create_react_class = React_View
+    if (window.braid) window.braid.create_react_class = React_View
 
     // *****************
     // Re-rendering react components
@@ -315,13 +315,13 @@
     // ###  Full-featured single-file app methods
     // ###
 
-    function make_client_statebus_maker () {
+    function make_client_braid_maker () {
         var extra_stuff = ['localstorage_client make_websocket client_creds',
                            'url_store components live_reload_from'].join(' ').split(' ')
-        if (window.statebus) {
-            var orig_statebus = statebus
-            window.statebus = function make_client_bus () {
-                var bus = orig_statebus()
+        if (window.braid) {
+            var orig_braid = braid
+            window.braid = function make_client_bus () {
+                var bus = orig_braid()
                 for (var i=0; i<extra_stuff.length; i++)
                     bus[extra_stuff[i]] = eval(extra_stuff[i])
                 bus.localstorage_client('ls/*')
@@ -332,19 +332,17 @@
 
     load_scripts() // This function could actually be inlined
     function load_scripts() {
-        // console.info('Loading scripts!', window.statebus)
-        if (!window.statebus) {
-            var statebus_dir = script_elem().getAttribute('src').match(/(.*)[\/\\]/)
-            statebus_dir = (statebus_dir && statebus_dir[1] + '/')||''
+        // console.info('Loading scripts!', window.braid)
+        if (!window.braid) {
+            var braid_dir = script_elem().getAttribute('src').match(/(.*)[\/\\]/)
+            braid_dir = (braid_dir && braid_dir[1] + '/')||''
 
             var js_urls = {
-                react: statebus_dir + 'extras/react.js',
-                sockjs: statebus_dir + 'extras/sockjs.js',
-                coffee: statebus_dir + 'extras/coffee.js',
-                statebus: statebus_dir + 'statebus.js'
+                react: braid_dir + 'extras/react.js',
+                sockjs: braid_dir + 'extras/sockjs.js',
+                coffee: braid_dir + 'extras/coffee.js',
+                braid: braid_dir + 'braid.js'
             }
-            if (statebus_dir == 'https://stateb.us/')
-                js_urls.statebus = statebus_dir + 'statebus4.js'
 
             for (var name in js_urls)
                 document.write('<script src="' + js_urls[name] + '" charset="utf-8"></script>')
@@ -357,30 +355,30 @@
         return document.querySelector('script[src*="client"][src$=".js"]')
     }
     var loaded_from_file_url = window.location.href.match(/^file:\/\//)
-    window.statebus_server = window.statebus_server ||
+    window.braid_server = window.braid_server ||
         script_elem().getAttribute('server') ||
         (loaded_from_file_url ? 'https://stateb.us:3007' : '/')
-    window.statebus_backdoor = window.statebus_backdoor ||
+    window.braid_backdoor = window.braid_backdoor ||
         script_elem().getAttribute('backdoor')
     var react_render
     function scripts_ready () {
         react_render = React.version >= '0.14.' ? ReactDOM.render : React.render
-        make_client_statebus_maker()
-        window.bus = window.statebus()
+        make_client_braid_maker()
+        window.bus = window.braid()
         window.bus.label = 'bus'
         window.sb = bus.sb
-        statebus.widget = React_View
-        statebus.create_react_class = React_View
+        braid.widget = React_View
+        braid.create_react_class = React_View
 
         improve_react()
         window.dom = window.ui = window.dom || window.ui || {}
         window.ignore_flashbacks = false
-        if (statebus_server !== 'none')
-            bus.net_mount ('/*', statebus_server)
+        if (braid_server !== 'none')
+            bus.net_mount ('/*', braid_server)
 
-        if (window.statebus_backdoor) {
-            window.master = statebus()
-            master.net_mount('*', statebus_backdoor)
+        if (window.braid_backdoor) {
+            window.master = braid()
+            master.net_mount('*', braid_backdoor)
         }
         bus.net_automount()
 
@@ -390,19 +388,19 @@
 
             var old_key = o.key
             o.key = old_key + '/' + Math.random().toString(36).substring(2,12)
-            statebus.cache[o.key] = o
-            delete statebus.cache[old_key]
+            braid.cache[o.key] = o
+            delete braid.cache[old_key]
             bus.set(o)
         }
         load_coffee()
 
-        statebus.compile_coffee = compile_coffee
-        statebus.load_client_code = load_client_code
-        statebus.load_widgets = load_widgets
+        braid.compile_coffee = compile_coffee
+        braid.load_client_code = load_client_code
+        braid.load_widgets = load_widgets
 
-        if (window.statebus_ready)
-            for (var i=0; i<statebus_ready.length; i++)
-                statebus_ready[i]()
+        if (window.braid_ready)
+            for (var i=0; i<braid_ready.length; i++)
+                braid_ready[i]()
 
         load_widgets()
         // if (dom.Body || dom.body || dom.BODY)
@@ -752,9 +750,10 @@
         var scripts = document.getElementsByTagName("script")
         var filename = location.pathname.substring(location.pathname.lastIndexOf('/') + 1)
         for (var i=0; i<scripts.length; i++)
-            if (scripts[i].getAttribute('type')
+            if (scripts[i].getAttribute('braid') === '' ||
+                scripts[i].getAttribute('type')
                 in {'statebus':1, 'coffeedom':1,'statebus-js':1,
-                    'coffee':1, 'coffeescript':1}) {
+                    'coffee':1, 'coffeescript':1, 'braid':1}) {
                 // Compile coffeescript to javascript
                 var compiled = scripts[i].text
                 if (scripts[i].getAttribute('type') !== 'statebus-js')

@@ -1,6 +1,6 @@
 var fs = require('fs'),
     util = require('util')
-var unique_sockjs_string = '_connect_to_statebus_'
+var unique_sockjs_string = '_connect_to_braid_'
 
 function default_options (bus) { return {
     port: 'auto',
@@ -150,7 +150,7 @@ function import_server (bus, options)
         var bus = this
         if (!bus.bus_for_http_client.counter)
             bus.bus_for_http_client.counter = 0
-        var cbus = require('./statebus')()
+        var cbus = require('./braid')()
         cbus.label = 'client_http' + bus.bus_for_http_client.counter++
         cbus.master = bus
 
@@ -281,7 +281,7 @@ function import_server (bus, options)
                                         id: conn.id}
                 master.set(connections)
 
-                var client = require('./statebus')()
+                var client = require('./braid')()
                 client.label = 'client' + client_num++
                 master.label = master.label || 'master'
                 client.master = master
@@ -1220,7 +1220,7 @@ function import_server (bus, options)
             var allowed = post._.to.concat(post._.cc).concat(post._.from)
             return allowed.includes(current_addy()) || allowed.includes('public')
         }
-        var drtbus = master//require('./statebus')()
+        var drtbus = master//require('./braid')()
         function dirty (key) { drtbus.set({key: 'dirty-'+key, n: Math.random()}) }
         function watch_for_dirt (key) { drtbus.get('dirty-'+key) }
 
@@ -2109,7 +2109,7 @@ function import_server (bus, options)
     // Installs a GET handler at route that gets state from a getter function
     // Note: Makes too many textbusses.  Should re-use one.
     http_serve: function http_serve (route, getter) {
-        var textbus = require('./statebus')()
+        var textbus = require('./braid')()
         textbus.label = 'textbus'
         var watched = new Set()
         textbus('*').to_get = (filename, old) => {
@@ -2177,8 +2177,8 @@ function import_server (bus, options)
         bus(path).to_get = () =>
             ({_:
               ['extras/coffee.js', 'extras/sockjs.js', 'extras/react.js',
-               'statebus.js', 'client.js']
-              .map((f) => bus.read_file('node_modules/statebus/' + f))
+               'braid.js', 'client.js']
+              .map((f) => bus.read_file('node_modules/braid/' + f))
               .join(';\n')})
     },
 
@@ -2302,17 +2302,17 @@ var delay_so_far = 0
 // Now export everything
 module.exports.import_server = import_server
 module.exports.run_server = function (bus, options) { bus.serve(options) }
-module.exports.import_module = function (statebus) {
-    statebus.testing = {test, run_tests, log, assert, delay}
+module.exports.import_module = function (braid) {
+    braid.testing = {test, run_tests, log, assert, delay}
 
-    statebus.serve = function serve (options) {
-        var bus = statebus()
+    braid.serve = function serve (options) {
+        var bus = braid()
         require('./server').run_server(bus, options)
         return bus
     }
 
-    // Handy repl. Invoke with node -e 'require("statebus").repl("/tmp/foo")'
-    statebus.repl = function (filename) {
+    // Handy repl. Invoke with node -e 'require("braid").repl("/tmp/foo")'
+    braid.repl = function (filename) {
         var net = require('net')
         var sock = net.connect(filename)
 
