@@ -2096,13 +2096,15 @@ function import_server (bus, options)
         }
 
         bus(state_path + '/*').to_set = (o, rest, t) => {
-            if (rest.length>0 && rest[0] !== '/') return
             var f = Buffer.from(o._, 'base64')
-            require('fs').writeFile(file_path + rest, f)
+            require('fs').writeFile(file_path +'/'+ rest, f)
             buffer[f] = new Date().getTime()
             t.done()
         }
-
+        bus(state_path + '/*').to_delete = (key, t) => {
+            require('fs').unlinkSync(key)
+            t.done()
+        }
         bus.http.use('/'+state_path, require('express').static(full_file_path))
     },
 

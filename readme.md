@@ -18,7 +18,7 @@ Read the instructions at https://braid.news/tutorial
 ## What's in this repository?
 
 ```
-sync9.js      # The internal sync algorithm and data structures
+sync9.js      # The sync algorithm and data structures
 braid.js      # A nice API to read, write, control, and react to state changes
 client.js     # Support for web browsers
 server.js     # Support for node.js servers
