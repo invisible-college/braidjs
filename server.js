@@ -1539,7 +1539,7 @@ function import_server (bus, options)
         var client = this // to keep me straight while programming
 
         // Initialize master
-        if (master('users/passwords').to_get.length === 0) {
+        if (!master.auth_initialized) {
             master('users/passwords').to_get = function (k) {
                 var result = {key: 'users/passwords'}
                 var users = master.get('users')
@@ -1556,7 +1556,8 @@ function import_server (bus, options)
                 }
                 return result
             }
-
+            master.auth_initialized = true
+            master.get('users/passwords')
         }
 
         // Authentication functions

@@ -1,5 +1,5 @@
 {
-  "name": "braid",
+  "name": "braidjs",
   "version": "7.0.0",
   "description": "Synchronization for the Web",
   "main": "braid.js",
