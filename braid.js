@@ -1616,25 +1616,72 @@
             if (nodejs) {console.log(s)} else console.log('%c' + s, 'color: blue')
         }
         
-        function send (meth, arg) {
-            var key = arg.key || arg
-            fetch("/" + key, {method: meth}).then(function (res) {
-                var reader = res.body.getReader()
-                var decoder = new TextDecoder('utf-8')
-                function read() {
-                    reader.read().then((x) => {
-                        var done = x.done, value = x.value
-                        if (!done) {
-                            var val = decoder.decode(value)
-                            console.log('We got value', val)
-                            read()
-                        }
+        function h2_get (key) {
+            key = rem_prefix(key)
+            fetch(url + '/' + key, {method: 'GET'})
+                .then(function (res) {
+                    var reader = res.body.getReader()
+                    var decoder = new TextDecoder('utf-8')
+                    function read() {
+                        reader.read().then(function (x) {
+                            var done = x.done, value = x.value
+                            if (!done) {
+                                var val = decoder.decode(value)
+                                console.log('We got value', val)
+                                read()
+                            }
+                        })
+                    }
+                    read()
+                })
+        }
+
+        function h2_set (obj, t) {
+            var h = {}
+            if (t.version) h.version = t.version
+            if (t.parents) h.parents = t.parents.map(JSON.stringify).join(', ')
+            var key = rem_prefix(obj.key)
+
+            var body = t.patch ? t.patch : JSON.stringify(obj)
+
+            fetch(url + "/" + key, {method: 'PUT', body: body,
+                              headers: new Headers(h), mode: 'no-cors'})
+                .then(function (res) {
+                    res.text().then(function (text) {
+                        console.log('h2_set got a ', res.status, text)
                     })
-                }
-                read()
             })
         }
         
+        function h2_forget (key) {
+            var key = rem_prefix(key)
+            fetch(url + "/" + key, {method: 'FORGET', mode: 'cors'})
+                .then(function (res) {
+                    res.text().then(function (text) {
+                        console.log('h2_forget got a ', res.status, text)
+                    })
+            })
+        }
+        function add_prefix (key) {
+            return is_absolute.test(key) ? key : preprefix + key }
+        function rem_prefix (key) {
+            return has_prefix.test(key) ? key.substr(preprefix.length) : key }
+        function add_prefixes (obj) {
+            return bus.translate_keys(bus.clone(obj), add_prefix) }
+        function rem_prefixes (obj) {
+            return bus.translate_keys(bus.clone(obj), rem_prefix) }
+
+        bus(prefix).to_set   = function (obj, t) {
+            bus.set.fire(obj)
+            h2_set(obj, t)
+        }
+        bus(prefix).to_get  = function (key) { h2_get(key),
+                                               keys_we_got.add(key) }
+        bus(prefix).to_forget = function (key) { h2_forget(key),
+                                                 keys_we_got.delete(key) }
+        // bus(prefix).to_delete = function (key) { send({'delete': key}) }
+
+
     }
     function net_mount (prefix, url, client_creds) {
         // Local: state://foo.com/* or /*
@@ -2293,7 +2340,7 @@
                'pending_gets subscriptions_to_us subscriptions_from_us loading_keys loading once',
                'global_funk busses rerunnable_funks',
                'translate_keys apply_patch',
-               'net_mount net_automount message_method',
+               'net_mount h2_mount net_automount message_method',
                'parse Set One_To_Many clone extend deep_map deep_equals prune validate sorta_diff log deps'
               ].join(' ').split(' ')
     for (var i=0; i<api.length; i++)
@@ -2304,6 +2351,7 @@
 
     // Export globals
     if (nodejs || !(document.querySelector('script[src*="client"][src$=".js"]')
+                    && document.querySelector('script[src*="client"][src$=".js"]')
                     .getAttribute('globals') == 'false')) {
         var globals = ['loading', 'clone', 'forget']
         var client_globals = ['get', 'set', 'del', 'state']
