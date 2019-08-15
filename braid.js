@@ -1605,6 +1605,37 @@
             || (m.forget && 'forget')
     }
 
+    function h2_mount (prefix, url, client_creds) {
+        var preprefix = prefix.slice(0,-1)
+        var is_absolute = /^i?statei?:\/\//
+        var has_prefix = new RegExp('^' + preprefix)
+        var bus = this
+        var keys_we_got = new bus.Set()  // This will probably change to ...?
+        if (url[url.length-1]=='/') url = url.substr(0,url.length-1)
+        function nlog (s) {
+            if (nodejs) {console.log(s)} else console.log('%c' + s, 'color: blue')
+        }
+        
+        function send (meth, arg) {
+            var key = arg.key || arg
+            fetch("/" + key, {method: meth}).then(function (res) {
+                var reader = res.body.getReader()
+                var decoder = new TextDecoder('utf-8')
+                function read() {
+                    reader.read().then((x) => {
+                        var done = x.done, value = x.value
+                        if (!done) {
+                            var val = decoder.decode(value)
+                            console.log('We got value', val)
+                            read()
+                        }
+                    })
+                }
+                read()
+            })
+        }
+        
+    }
     function net_mount (prefix, url, client_creds) {
         // Local: state://foo.com/* or /*
         var preprefix = prefix.slice(0,-1)
@@ -1652,7 +1683,7 @@
             if (t.version) x.version = t.version
             if (t.parents) x.parents = t.parents
             if (t.patch)   x.patch   = t.patch
-            if (t.patch)   x.set    = rem_prefix(x.set.key)
+            if (t.patch)   x.set     = rem_prefix(x.set.key)
             send(x)
         }
         bus(prefix).to_get  = function (key) { send({get: key}),
