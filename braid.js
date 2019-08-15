@@ -1622,12 +1622,28 @@
                 .then(function (res) {
                     var reader = res.body.getReader()
                     var decoder = new TextDecoder('utf-8')
+                    var buffer = ''
                     function read() {
                         reader.read().then(function (x) {
                             var done = x.done, value = x.value
                             if (!done) {
-                                var val = decoder.decode(value)
-                                console.log('We got value', val)
+                                buffer += decoder.decode(value)
+                                console.log('We have buffer', buffer)
+                                // Now try to parse it
+                                var m = buffer.match(/^(\d+)\n/)
+                                if (m) {
+                                    var content_length = parseInt(m[1])
+                                    if (buffer.length >=
+                                        content_length + m[1].length + 1) {
+                                        var content = buffer.substr(m[1].length + 1,
+                                                                    content_length + m[1].length + 1)
+                                        buffer = buffer.substr(content_length + m[1].length + 4)
+                                        console.log('Content is', content)
+                                        console.log('And buffer is now', JSON.stringify(buffer))
+                                        content = JSON.parse(content)
+                                        bus.set({key: key, val: content})
+                                    }
+                                }
                                 read()
                             }
                         })
@@ -1662,6 +1678,16 @@
                     })
             })
         }
+        function h2_delete (key) {
+            var key = rem_prefix(key)
+            fetch(url + "/" + key, {method: 'DELETE', mode: 'cors'})
+                .then(function (res) {
+                    res.text().then(function (text) {
+                        console.log('h2_delete got a ', res.status, text)
+                    })
+            })
+        }
+
         function add_prefix (key) {
             return is_absolute.test(key) ? key : preprefix + key }
         function rem_prefix (key) {
@@ -1679,7 +1705,7 @@
                                                keys_we_got.add(key) }
         bus(prefix).to_forget = function (key) { h2_forget(key),
                                                  keys_we_got.delete(key) }
-        // bus(prefix).to_delete = function (key) { send({'delete': key}) }
+        bus(prefix).to_delete = h2_delete
 
 
     }
