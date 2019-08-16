@@ -1641,7 +1641,7 @@
                                         console.log('Content is', content)
                                         console.log('And buffer is now', JSON.stringify(buffer))
                                         content = JSON.parse(content)
-                                        bus.set({key: key, val: content})
+                                        bus.set.fire({key: preprefix + key, val: content})
                                     }
                                 }
                                 read()
