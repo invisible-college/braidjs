@@ -63,7 +63,8 @@ function import_server (bus, options)
         // ******************************************
         // ***** Create our own http server *********
         bus.make_http_server({port: bus.options.port, use_ssl})
-        bus.sockjs_server(this.http_server, c) // Serve via sockjs on it
+        //bus.sockjs_server(this.http_server, c) // Serve via sockjs on it
+        bus.h2_server(c) // Serve via sockjs on it
         var express = require('express')
         bus.express = express()
         bus.http = express.Router()
@@ -142,7 +143,7 @@ function import_server (bus, options)
                 name: 'backdoor_http_server',
                 use_ssl: use_ssl
             })
-            bus.sockjs_server(this.backdoor_http_server)
+            bus.h2_server()
         }
     },
 
