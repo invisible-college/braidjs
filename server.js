@@ -13,6 +13,7 @@ function default_options (bus) { return {
             certificate: 'certs/certificate',
             certificate_bundle: 'certs/certificate-bundle'},
     connections: {include_users: true, edit_others: true},
+    http2: false,
     __secure: false
 }}
 
@@ -50,6 +51,7 @@ function import_server (bus, options)
             || require('fs').existsSync(bus.options.certs.certificate)
             || require('fs').existsSync(bus.options.certs.certificate_bundle))
 
+        console.log('Are we using SSL?', use_ssl)
         function c (client, conn) {
             client.honk = bus.honk
             client.serves_auth(conn, master)
@@ -62,34 +64,38 @@ function import_server (bus, options)
 
         // ******************************************
         // ***** Create our own http server *********
-        bus.make_http_server({port: bus.options.port, use_ssl})
-        //bus.sockjs_server(this.http_server, c) // Serve via sockjs on it
-        bus.h2_server(c) // Serve via sockjs on it
-        var express = require('express')
-        bus.express = express()
-        bus.http = express.Router()
-        bus.install_express(bus.express)
+        if (bus.options.http2)
+            bus.h2_server(c)
+        else {
+            bus.make_http_server({port: bus.options.port, use_ssl})
+            bus.sockjs_server(this.http_server, c) // Serve via sockjs on it
 
-        // use gzip compression if available
-        try { bus.http.use(require('compression')())
-              console.log('Enabled http compression!') } catch (e) {}
+            var express = require('express')
+            bus.express = express()
+            bus.http = express.Router()
+            bus.install_express(bus.express)
+
+            // use gzip compression if available
+            try { bus.http.use(require('compression')())
+                  console.log('Enabled http compression!') } catch (e) {}
 
 
-        // Initialize new clients with an id.  We put the client id on
-        // req.client, and also in a cookie for the browser to see.
-        if (bus.options.client)
-            bus.express.use(function (req, res, next) {
-                req.client = require('cookie').parse(req.headers.cookie || '').client
-                if (!req.client) {
-                    req.client = (Math.random().toString(36).substring(2)
-                                  + Math.random().toString(36).substring(2)
-                                  + Math.random().toString(36).substring(2))
-            
-                    res.setHeader('Set-Cookie', 'client=' + req.client
-                                  + '; Expires=21 Oct 2025 00:0:00 GMT;')
-                }
-                next()
-            })
+            // Initialize new clients with an id.  We put the client id on
+            // req.client, and also in a cookie for the browser to see.
+            if (bus.options.client)
+                bus.express.use(function (req, res, next) {
+                    req.client = require('cookie').parse(req.headers.cookie || '').client
+                    if (!req.client) {
+                        req.client = (Math.random().toString(36).substring(2)
+                                      + Math.random().toString(36).substring(2)
+                                      + Math.random().toString(36).substring(2))
+                        
+                        res.setHeader('Set-Cookie', 'client=' + req.client
+                                      + '; Expires=21 Oct 2025 00:0:00 GMT;')
+                    }
+                    next()
+                })
+        }
 
         // Initialize file sync
         ; (bus.options.sync_files || []).forEach( x => {
@@ -97,29 +103,33 @@ function import_server (bus, options)
                 bus.sync_files(x.state_path, x.fs_path)
         })
 
-        // User will put their routes in here
-        bus.express.use('/', bus.http)
+        if (!bus.options.http2) {
+            // User will put their routes in here
+            bus.express.use('/', bus.http)
 
-        // Add a fallback that goes to state
-        bus.express.get('*', function (req, res) {
-            // Make a temporary client bus
-            var cbus = bus.bus_for_http_client(req, res)
+            // Add a fallback that goes to state
+            bus.express.get('*', function (req, res) {
+                // Make a temporary client bus
+                var cbus = bus.bus_for_http_client(req, res)
 
-            // Do the get
-            cbus.honk = 'statelog'
-            var singleton = req.path.match(/^\/code\//)
-            cbus.get_once(req.path.substr(1), (o) => {
-                var unwrap = (Object.keys(o).length === 2
-                              && '_' in o
-                              && typeof o._ === 'string')
-                // To do: translate pointers as keys
-                res.send(unwrap ? o._ : JSON.stringify(o))
-                cbus.delete_bus()
+                // Do the get
+                cbus.honk = 'statelog'
+                var singleton = req.path.match(/^\/code\//)
+                cbus.get_once(req.path.substr(1), (o) => {
+                    var unwrap = (Object.keys(o).length === 2
+                                  && '_' in o
+                                  && typeof o._ === 'string')
+                    // To do: translate pointers as keys
+                    res.send(unwrap ? o._ : JSON.stringify(o))
+                    cbus.delete_bus()
+                })
             })
-        })
+        }
 
-        // Serve Client Coffee
-        bus.serve_client_coffee()
+        if (!bus.options.http2) {
+            // Serve Client Coffee
+            bus.serve_client_coffee()
+        }
 
         // Custom route
         var OG_route = bus.route
@@ -143,7 +153,10 @@ function import_server (bus, options)
                 name: 'backdoor_http_server',
                 use_ssl: use_ssl
             })
-            bus.h2_server()
+            if (bus.options.http2)
+                bus.h2_server()
+            else
+                bus.sockjs_server(this.backdoor_http_server)
         }
     },
 
@@ -264,8 +277,16 @@ function import_server (bus, options)
         }
 
         const server = http.createSecureServer({
-            key: fs.readFileSync(master.options.certs.private_key),
-            cert: fs.readFileSync(master.options.certs.cert)})
+            ca: (fs.existsSync(this.options.certs.certificate_bundle)
+                 && require('split-ca')(this.options.certs.certificate_bundle)),
+            key:  fs.readFileSync(this.options.certs.private_key),
+            cert: fs.readFileSync(this.options.certs.certificate),
+            ciphers: "ECDHE-RSA-AES256-SHA384:DHE-RSA-AES256-SHA384"
+                + ":ECDHE-RSA-AES256-SHA256:DHE-RSA-AES256-SHA256"
+                + ":ECDHE-RSA-AES128-SHA256:DHE-RSA-AES128-SHA256"
+                + ":HIGH:!aNULL:!eNULL:!EXPORT:!DES:!RC4:!MD5:!PSK:!SRP:!CAMELLIA",
+            honorCipherOrder: true
+        })
 
         server.on('error', (error) => {console.error(error)})
 
@@ -322,7 +343,7 @@ function import_server (bus, options)
                 break
             }
         })
-        server.listen(PORT, () => console.log(`Server listening!`));
+        server.listen(master.options.port, () => console.log(`Server listening!`));
     },
     sockjs_server: function sockjs_server(httpserver, client_bus_func) {
         var master = this
