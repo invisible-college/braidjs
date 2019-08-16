@@ -375,7 +375,7 @@
         window.ignore_flashbacks = false
         if (braid_server !== 'none')
             // bus.net_mount ('/*', braid_server)
-            bus.h2_mount('/*', 'https://invisible.college:1201')
+            bus.h2_mount('/*', braid_server)
 
         if (window.braid_backdoor) {
             window.master = braid()

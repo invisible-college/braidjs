@@ -1595,7 +1595,8 @@
     // ******************
     // Network client
     function get_domain (key) { // Returns e.g. "state://foo.com"
-        var m = key.match(/^i?statei?\:\/\/(([^:\/?#]*)(?:\:([0-9]+))?)/)
+        // var m = key.match(/^i?statei?\:\/\/(([^:\/?#]*)(?:\:([0-9]+))?)/)
+        var m = key.match(/^https??\:\/\/(([^:\/?#]*)(?:\:([0-9]+))?)/)
         return m && m[0]
     }
     function message_method (m) {
@@ -1607,7 +1608,7 @@
 
     function h2_mount (prefix, url, client_creds) {
         var preprefix = prefix.slice(0,-1)
-        var is_absolute = /^i?statei?:\/\//
+        var is_absolute = /^https?:\/\//
         var has_prefix = new RegExp('^' + preprefix)
         var bus = this
         var keys_we_got = new bus.Set()  // This will probably change to ...?
@@ -1884,7 +1885,8 @@
         bus.route = function (key, method, arg, opts) {
             var d = get_domain(key)
             if (d && !connections[d]) {
-                bus.net_mount(d + '/*', d)
+                //bus.net_mount(d + '/*', d)
+                bus.h2_mount(d + '/*', d)
                 connections[d] = true
             }
 

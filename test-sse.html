@@ -1,12 +1,6 @@
 <script type="braid">
 
-# bus.h2_mount('/*', 'https://invisible.college:1201')
 dom.BODY = ->
-  DIV 'The current text is: ',
-    PRE get('/sse').val
-</script>
+  DIV 'The current text is: ', PRE get('https://invisible.college:1201/sse').val
 
-<script src="client.js"></script>
-<script>
-console.log('hello')
-</script>
+#</script><script src="client.js"></script>
