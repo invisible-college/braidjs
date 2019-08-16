@@ -1632,7 +1632,7 @@
                                 console.log('We have buffer', buffer)
                                 // Now try to parse it
                                 var m = buffer.match(/^(\d+)\n/)
-                                if (m) {
+                                while (m) {
                                     var content_length = parseInt(m[1])
                                     if (buffer.length >=
                                         content_length + m[1].length + 1) {
@@ -1644,6 +1644,7 @@
                                         content = JSON.parse(content)
                                         bus.set.fire({key: preprefix + key, val: content})
                                     }
+                                    m = buffer.match(/^(\d+)\n/)
                                 }
                                 read()
                             }
