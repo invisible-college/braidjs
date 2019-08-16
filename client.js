@@ -751,10 +751,10 @@
         var scripts = document.getElementsByTagName("script")
         var filename = location.pathname.substring(location.pathname.lastIndexOf('/') + 1)
         for (var i=0; i<scripts.length; i++)
-            if (scripts[i].getAttribute('braid') === '' ||
+            if (scripts[i].getAttribute('braidml') === '' ||
                 scripts[i].getAttribute('type')
                 in {'statebus':1, 'coffeedom':1,'statebus-js':1,
-                    'coffee':1, 'coffeescript':1, 'braid':1}) {
+                    'coffee':1, 'coffeescript':1, 'braidml':1}) {
                 // Compile coffeescript to javascript
                 var compiled = scripts[i].text
                 if (scripts[i].getAttribute('type') !== 'statebus-js')
