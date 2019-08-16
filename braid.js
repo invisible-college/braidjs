@@ -1616,15 +1616,12 @@
         function nlog (s) {
             if (nodejs) {console.log(s)} else console.log('%c' + s, 'color: blue')
         }
-        const REQ_TIMEOUT = 10000;
+        
         function h2_get (key) {
             key = rem_prefix(key)
-            var controller = new AbortController();
-            var signal = controller.signal;
-            setTimeout(() => signal.abort("Request timed out"), REQ_TIMEOUT);
-            fetch(url + '/' + key, {method: 'GET', signal: signal})
+            fetch(url + '/' + key, {method: 'GET'})
                 .then(function (res) {
-                    if (!Response.ok) {
+                    if (!res.ok) {
                         console.error("Fetch failed!", Response)
                         return
                     }
@@ -1673,13 +1670,10 @@
 
             var body = t.patch ? t.patch : JSON.stringify(obj)
 
-            var controller = new AbortController();
-            var signal = controller.signal;
-            setTimeout(() => signal.abort("Request timed out"), REQ_TIMEOUT);
-
             fetch(url + "/" + key, {method: 'PUT', body: body,
-                              headers: new Headers(h), mode: 'no-cors', signal: signal})
+                              headers: new Headers(h), mode: 'no-cors'})
                 .then(function (res) {
+                    succeeded = true;
                     res.text().then(function (text) {
                         console.log('h2_set got a ', res.status, text)
                     })
@@ -1693,10 +1687,7 @@
         
         function h2_forget (key) {
             var key = rem_prefix(key)
-            var controller = new AbortController();
-            var signal = controller.signal;
-            setTimeout(() => signal.abort("Request timed out"), REQ_TIMEOUT);
-            fetch(url + "/" + key, {method: 'FORGET', mode: 'cors', signal: signal})
+            fetch(url + "/" + key, {method: 'FORGET', mode: 'cors'})
                 .then(function (res) {
                     res.text().then(function (text) {
                         console.log('h2_forget got a ', res.status, text)
@@ -1708,10 +1699,7 @@
         }
         function h2_delete (key) {
             var key = rem_prefix(key)
-            var controller = new AbortController();
-            var signal = controller.signal;
-            setTimeout(() => signal.abort("Request timed out"), REQ_TIMEOUT);
-            fetch(url + "/" + key, {method: 'DELETE', mode: 'cors', signal: signal})
+            fetch(url + "/" + key, {method: 'DELETE', mode: 'cors'})
                 .then(function (res) {
                     res.text().then(function (text) {
                         console.log('h2_delete got a ', res.status, text)
