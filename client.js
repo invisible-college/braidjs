@@ -754,7 +754,7 @@
             if (scripts[i].getAttribute('braidml') === '' ||
                 scripts[i].getAttribute('type')
                 in {'statebus':1, 'coffeedom':1,'statebus-js':1,
-                    'coffee':1, 'coffeescript':1, 'braidml':1}) {
+                    'coffee':1, 'coffeescript':1, 'braidml':1, 'braidl':1}) {
                 // Compile coffeescript to javascript
                 var compiled = scripts[i].text
                 if (scripts[i].getAttribute('type') !== 'statebus-js')
