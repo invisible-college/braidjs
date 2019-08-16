@@ -1619,6 +1619,7 @@
         
         function h2_get (key) {
             key = rem_prefix(key)
+            function trySend(waitTime) {
             fetch(url + '/' + key, {method: 'GET'})
                 .then(function (res) {
                     if (!res.ok) {
@@ -1658,8 +1659,10 @@
                 })
                 .catch(function (err) {
                     console.log("Fetch GET failed: ", err);
-                    h2_get(key);
+                    setTimeout(() => trySend(Math.min(waitTime * 5, 10000)), waitTime)
                 });
+            }
+            trySend(10);
         }
 
         function h2_set (obj, t) {
@@ -1669,45 +1672,51 @@
             var key = rem_prefix(obj.key)
 
             var body = t.patch ? t.patch : JSON.stringify(obj)
-
-            fetch(url + "/" + key, {method: 'PUT', body: body,
-                              headers: new Headers(h), mode: 'no-cors'})
+            function trySend(waitTime) {
+                fetch(url + "/" + key, {method: 'PUT', body: body,
+                                headers: new Headers(h), mode: 'no-cors'})
                 .then(function (res) {
-                    succeeded = true;
                     res.text().then(function (text) {
                         console.log('h2_set got a ', res.status, text)
                     })
                 })
                 .catch(function (err) {
                     console.log("Fetch SET failed: ", err);
-                    h2_set(obj, t);
+                    setTimeout(() => trySend(Math.min(waitTime * 5, 10000)), waitTime)
                 });
-
+            }
+            trySend(10);
         }
         
         function h2_forget (key) {
             var key = rem_prefix(key)
-            fetch(url + "/" + key, {method: 'FORGET', mode: 'cors'})
-                .then(function (res) {
-                    res.text().then(function (text) {
-                        console.log('h2_forget got a ', res.status, text)
-                    })
-            }).catch(function (err) {
-                console.log("Fetch FORGET failed: ", err);
-                h2_forget(key);
-            });
+            function trySend(waitTime) {
+                fetch(url + "/" + key, {method: 'FORGET', mode: 'cors'})
+                    .then(function (res) {
+                        res.text().then(function (text) {
+                            console.log('h2_forget got a ', res.status, text)
+                        })
+                }).catch(function (err) {
+                    console.log("Fetch FORGET failed: ", err);
+                    setTimeout(() => trySend(Math.min(waitTime * 5, 10000)), waitTime)
+                });
+            }
+            trySend(10);
         }
         function h2_delete (key) {
             var key = rem_prefix(key)
-            fetch(url + "/" + key, {method: 'DELETE', mode: 'cors'})
-                .then(function (res) {
-                    res.text().then(function (text) {
-                        console.log('h2_delete got a ', res.status, text)
-                    })
-            }).catch(function (err) {
-                console.log("Fetch DELETE failed: ", err);
-                h2_delete(key);
-            });
+            function trySend(waitTime) {
+                fetch(url + "/" + key, {method: 'DELETE', mode: 'cors'})
+                    .then(function (res) {
+                        res.text().then(function (text) {
+                            console.log('h2_delete got a ', res.status, text)
+                        })
+                }).catch(function (err) {
+                    console.log("Fetch DELETE failed: ", err);
+                    setTimeout(() => trySend(Math.min(waitTime * 5, 10000)), waitTime)
+                });
+            }
+            trySend(10);
         }
 
         function add_prefix (key) {
