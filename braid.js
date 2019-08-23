@@ -132,9 +132,11 @@
 
             // Call the to_set() handlers!
             var num_handlers = bus.route(obj.key, 'to_set', obj, t)
-            if (num_handlers === 0)
+            if (num_handlers === 0) {
                 // And fire if there weren't any!
                 set.fire(obj, t)
+                bus.route(obj.key, 'on_set_sync', obj, t)
+            }
         }
         finally {
             statelog_indent--
@@ -622,7 +624,7 @@
     // Connections
     function subspace (key) {
         var result = {}
-        for (var method in {to_get:null, to_set:null, on_set:null,
+        for (var method in {to_get:null, to_set:null, on_set:null, on_set_sync:null,
                             to_delete:null, to_forget:null})
             (function (method) {
                 Object.defineProperty(result, method, {
@@ -857,9 +859,10 @@
 
                     if (method === 'to_delete')
                         delete bus.cache[key]
-                    else if (method === 'to_set')
+                    else if (method === 'to_set') {
                         bus.set.fire(o || arg, t)
-                    else { // Then method === to_get
+                        bus.route(key, 'on_set_sync', o||arg, t)
+                    } else { // Then method === to_get
                         o.key = key
                         bus.set.fire(o, t)
                         // And now reset the version cause it could get called again

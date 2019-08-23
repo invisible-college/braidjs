@@ -140,6 +140,7 @@ function import_server (bus, options)
             // reflecting it to all clients!
             if (count === 0 && method === 'to_set') {
                 bus.set.fire(arg, opts)
+                bus.route(arg.key, 'on_set_sync', arg, opts)
                 count++
             }
 
@@ -296,6 +297,40 @@ function import_server (bus, options)
             session.on('goaway', () => console.log("Session goaway-ed"))
             session.on('error', (e) => console.log("Session errored:", e))
             session.on('timeout', () => console.log("Session timed out"))
+
+            if (client_bus_func) {
+                connections[conn.id] = {id: conn.id}
+                master.set(connections)
+
+                var client = require('./braid')()
+                client.label = 'client' + client_num++
+                master.label = master.label || 'master'
+                client.master = master
+                client_bus_func(client, conn)
+            } else
+                var client = master
+
+            var subscriptions_to_us = {}  // Every key that this session has gotton
+            log('h2_serve: New connection from', conn.remoteAddress)
+            function h2_pubber (obj, t) {
+                log('h2_pubber:', obj, t)
+                var msg = {set: obj}
+                if (t.version) msg.version = t.version
+                if (t.parents) msg.parents = t.parents
+                if (t.patch)   msg.patch =   t.patch
+                if (t.patch)   msg.set    = msg.set.key
+                msg = JSON.stringify(msg)
+
+                if (global.network_delay) {
+                    console.log('>>>> DELAYING!!!', global.network_delay)
+                    obj = bus.clone(obj)
+                    setTimeout(() => {conn.write(msg)}, global.network_delay)
+                } else
+                    session.write(msg)
+
+                log('sockjs_s: SENT a', msg, 'to client')
+            }
+
         })
 
         server.on('request', function (req, res) {
@@ -306,6 +341,7 @@ function import_server (bus, options)
 
             switch (req.method) {
             case 'GET':
+                
                 respond_sse(res.stream, req.url);
                 break
             case 'OPTIONS':
@@ -388,7 +424,7 @@ function import_server (bus, options)
                 var msg = {set: obj}
                 if (t.version) msg.version = t.version
                 if (t.parents) msg.parents = t.parents
-                if (t.patch)   msg.patch =   t.patch
+                if (t.patch)   msg.patch   = t.patch
                 if (t.patch)   msg.set    = msg.set.key
                 msg = JSON.stringify(msg)
 
@@ -396,10 +432,13 @@ function import_server (bus, options)
                     console.log('>>>> DELAYING!!!', global.network_delay)
                     obj = bus.clone(obj)
                     setTimeout(() => {conn.write(msg)}, global.network_delay)
-                } else
-                    conn.write(msg)
+                } else {
+                    console.assert(!stream.closed)
+                    session.open_gets[obj.key].write(
+                        msg.length + '\n' + msg + '\n')
+                }
 
-                log('sockjs_s: SENT a', msg, 'to client')
+                log('h2_s: SENT a', msg, 'to client')
             }
             conn.on('data', function(message) {
                 // log('sockjs_s:', message)
@@ -676,8 +715,10 @@ function import_server (bus, options)
                     console.log('Saving db after crash')
                     console.time()
                     fs.writeFileSync(filename, JSON.stringify(db, null, 1))
-                    console.log('Setd db after crash')
+                    console.log('Saved db after crash')
                 }
+                if (bus.log_errors)
+                    bus.log_errors(e)
                 process.exit(1)
             }
             process.on('SIGINT', recover)
@@ -818,6 +859,10 @@ function import_server (bus, options)
             // Add get handler
             bus(prefix).to_get = function (key, t) {
                 var x = db.prepare('select * from cache where key = ?').get([key])
+                // This should instead recurse into the object and do recurive
+                // queries on the stuff inside.
+                // - Because that'd be compatible with the new format
+                // - And then we could delete the stuff inside
                 t.done(x ? JSON.parse(x.obj) : {})
             }
             
@@ -850,10 +895,9 @@ function import_server (bus, options)
                 if (method === 'to_set') on_set(arg)
                 return old_route(key, method, arg, t)
             }
-        } else {
-            on_set.priority = true
-            bus(prefix).on_set = on_set
-        }
+        } else
+            bus(prefix).on_set_sync = on_set
+
         bus(prefix).to_delete = function (key) {
             if (opts.use_transactions && !open_transaction){
                 console.time('save db')
@@ -1630,6 +1674,21 @@ function import_server (bus, options)
     serves_auth: function serves_auth (conn, master) {
         var client = this // to keep me straight while programming
 
+        function logout (key) {
+            var clients = master.get('logged_in_clients')
+            for (var k in clients)
+                if (k !== 'key')
+                    if (Object.keys(clients[k]).length === 0) {
+                        client.log('Found a deleted user. Removing.', k, clients[k])
+                        delete clients[k]
+                        master.set(clients)
+                    } else if (clients[k].key === key) {
+                        client.log('Logging out!', k, clients[k])
+                        delete clients[k]
+                        master.set(clients)
+                    }
+        }
+
         // Initialize master
         if (!master.auth_initialized) {
             master('users/passwords').to_get = function (k) {
@@ -1638,6 +1697,10 @@ function import_server (bus, options)
                 users.all = users.all || []
                 for (var i=0; i<users.all.length; i++) {
                     var u = master.get(users.all[i])
+                    if (!(u.login || u.name)) {
+                        console.error('upass: this user has bogus name/login', u.key, u.name, u.login)
+                        continue
+                    }
                     var login = (u.login || u.name).toLowerCase()
                     console.assert(login, 'Missing login for user', u)
                     if (result.hasOwnProperty(login)) {
@@ -1650,6 +1713,38 @@ function import_server (bus, options)
             }
             master.auth_initialized = true
             master.get('users/passwords')
+
+            master('user/*').to_delete = (key, t) => {
+                master.log('Deleteinggg!!!', key)
+                // Remove from users.all
+                var users = master.get('users')
+                users.all = users.all.filter(u => u.key && u.key !== key)
+                master.set(users)
+
+                // Log out
+                master.log('Logging out', key)
+                logout(key)
+
+                // Remove connection
+                master.log('Removing connections for', key)
+                var conns = master.get('connections')
+                for (var k in conns) {
+                    console.log('Trying key', k)
+                    if (k !== 'key')
+                        if (conns[k].user && !conns[k].user.key) {
+                            console.log('Cleaning keyless user', conss[k].user)
+                            delete conns[k].user
+                            master.get(conns)
+                            continue
+                        }
+                }
+
+                master.log('Dirtying users/passwords for', key)
+                master.dirty('users/passwords')
+
+                // Done.
+                t.done()
+            }
         }
 
         // Authentication functions
@@ -1699,6 +1794,7 @@ function import_server (bus, options)
                                pass: params.pass,
                                email: params.email }
             for (var k in new_account) if (!new_account[k]) delete new_account[k]
+            master.set(new_account)
 
             var users = master.get('users')
             users.all = users.all || []

@@ -3,6 +3,7 @@
 dom.BODY = ->
   DIV {},
     'The current text is: '
-    PRE get('https://invisible.college:1201/sse').val
+    # PRE get('https://invisible.college:1201/sse').val
+    PRE get('https://localhost:4200/sse').val
 
 #</script><script src=client.js></script>

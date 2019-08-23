@@ -1162,7 +1162,7 @@ test(function setup_server (done) {
 
     c = require('../braid')()
     c.label = 'c'
-    c.ws_client('/*', 'statei://localhost:3948')
+    c.net_mount('/*', 'statei://localhost:3948')
 
     // s.honk = true
     // c.honk = true
@@ -1566,7 +1566,7 @@ test(function closet_space (done) {
 
     var c = require('../braid')()
     c.label = 'c'
-    c.ws_client('/*', 'statei://localhost:3949')
+    c.net_mount('/*', 'statei://localhost:3949')
 
     // Make stuff as user A
     var cu = c.get('/current_user')
