@@ -334,8 +334,10 @@
     function load_scripts() {
         // console.info('Loading scripts!', window.braid)
         if (!window.braid) {
-            var braid_dir = script_elem().getAttribute('src').match(/(.*)[\/\\]/)
-            braid_dir = (braid_dir && braid_dir[1] + '/')||''
+            var braid_dir = script_option('src')
+            if (braid_dir) braid_dir = braid_dir.match(/(.*)[\/\\]/)
+            if (braid_dir) braid_dir = braid_dir[1] + '/'
+            else braid_dir = ''
 
             var js_urls = {
                 react: braid_dir + 'extras/react.js',
@@ -351,15 +353,14 @@
         document.addEventListener('DOMContentLoaded', scripts_ready, false)
     }
 
-    function script_elem () {
-        return document.querySelector('script[src*="client"][src$=".js"]')
+    function script_option (option_name) {
+        var script_elem = document.querySelector('script[src*="client"][src$=".js"]')
+        return script_elem && script_elem.getAttribute(option_name)
     }
     var loaded_from_file_url = window.location.href.match(/^file:\/\//)
-    window.braid_server = window.braid_server ||
-        script_elem().getAttribute('server') ||
-        (loaded_from_file_url ? 'https://stateb.us:3007' : '/')
-    window.braid_backdoor = window.braid_backdoor ||
-        script_elem().getAttribute('backdoor')
+    window.braid_server = window.braid_server || script_option('server') ||
+        (loaded_from_file_url ? 'none' : '/')
+    window.braid_backdoor = window.braid_backdoor || script_option('backdoor')
     var react_render
     function scripts_ready () {
         react_render = React.version >= '0.14.' ? ReactDOM.render : React.render
