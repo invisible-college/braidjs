@@ -13,11 +13,10 @@ This makes web programming much easier, and gives you the following magical feat
 
 ## This is the beta version 7
 
-This version isn't released just yet!  It has bugs.  The current release is at
-https://github.com/invisible-college/statebus.
+This version isn't released just yet!  It has bugs.
 
-This repository has a different name because we are changing the name from
-`statebus` to `braidjs` with version 7.
+The current release is at https://github.com/invisible-college/statebus.  The
+name is changing from `statebus` to `braidjs` with version 7.
 
 ## How do I use this?
 
