@@ -18,19 +18,19 @@ This version isn't released just yet!  It has bugs.
 The current release is at https://github.com/invisible-college/statebus.  The
 name is changing from `statebus` to `braidjs` with version 7.
 
-[Roadmap](https://braid.news/roadmap) to version 7 release:
+[Roadmap](https://braid.news/roadmap) to release:
 - [x] Rename `fetch` & `save` -> `get` & `set`
 - [x] Rename `statebus` -> `braidjs`
 - [x] Change JSON encoding
 - [x] Remove recursion in `set`
 - [ ] New [handler API](https://braid.news/roadmap/new-handlers)
+  - [ ] Add [cache eviction policy](https://en.wikipedia.org/wiki/Cache_replacement_policies#Most_recently_used_(MRU))
 - [ ] Incorporate the [Sync9](https://braid.news/sync9/performance) pruning peer-to-peer CRDT
   - [ ] Disk persistence
-- [ ] Network protocol using extensions to regular HTTP instead of WebSocket
-- [ ] New Proxy implementation
+- [ ] New [network protocol](https://braid.news/protocol)
+- [ ] New ES6 Proxy implementation
 - [ ] Rename `key` -> `link`
-- [ ] Implement MRU in cache
-- [ ] Build P2P demo app
+
 
 ## How do I use this?
 
