@@ -23,7 +23,7 @@ name is changing from `statebus` to `braidjs` with version 7.
 - [x] Rename `statebus` -> `braidjs`
 - [x] Change JSON encoding
 - [x] Remove recursion in `set`
-- [ ] New [handler API](https://braid.news/roadmap/new-handlers)
+- [ ] New [API](https://braid.news/roadmap/new-api)
   - [ ] Add [cache eviction policy](https://en.wikipedia.org/wiki/Cache_replacement_policies#Most_recently_used_(MRU))
 - [ ] Incorporate the [Sync9](https://braid.news/sync9/performance) pruning peer-to-peer CRDT
   - [ ] Disk persistence
