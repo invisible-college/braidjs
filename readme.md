@@ -11,6 +11,13 @@ This makes web programming much easier, and gives you the following magical feat
 
 *We intentionally keep this readme short.* Read more about braid at https://braid.news!
 
+## This repo is the beta Version 7
+
+This version isn't released just yet!  It has bugs.  The current supported
+release is still at https://github.com/invisible-college/statebus.  This repo
+has a different name because we are changing the name from `statebus` to
+`braidjs` with version 7.
+
 ## How do I use this?
 
 Read the instructions at https://braid.news/tutorial
