@@ -115,6 +115,23 @@ test(function applying_patches (done) {
     done()
 })
 
+test(function to_get_forget (done) {
+    var buss = require('../braid')()
+    var count = 0
+    buss.set({key: 'bar', count: ++count})
+    buss('foo').to_get = (k) => {
+        var times = buss.get('bar').count
+        log('Running the to_get', times, 'times!')
+        if (times > 1)
+            console.error('### We were not supposed to do that!!!!!!!!! ####')
+    }
+    buss.get('foo')
+    buss.set({key: 'bar', count: count++})
+    delay(50, _=> (log('forgetting!'), buss.forget('foo')))
+    delay(240, _=> buss.set({key: 'bar', count: count++}))
+    delay(40, done)
+})
+
 test(function prune (done) {
     var boose = require('../braid')()
     boose.set({key: 'nark', _: 333666})

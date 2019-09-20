@@ -17,7 +17,7 @@
         bogus_check(key)
 
         var called_from_reactive_funk = !callback
-        var funk = callback || executing_funk
+        var funck = callback || executing_funk
 
         if (callback) {
             (callback.defined = callback.defined || []
@@ -32,17 +32,17 @@
             }
         }
 
-        // ** Subscribe the calling funk **
+        // ** Subscribe the calling funck **
 
         if (called_from_reactive_funk)
-            funk.has_seen(bus, key, versions[key])  // Maybe this line should go below, in the existing "if (called_from_reactive_funk) {" ??
-        subscriptions_to_us.add(key, funk_key(funk))
+            funck.has_seen(bus, key, versions[key])  // Maybe this line should go below, in the existing "if (called_from_reactive_funk) {" ??
+        subscriptions_to_us.add(key, funk_key(funck))
         if (to_be_forgotten[key]) {
             clearTimeout(to_be_forgotten[key])
             delete to_be_forgotten[key]
         }
 
-        bind(key, 'on_set', funk)
+        bind(key, funck.to_getter ? 'on_set_sync' : 'on_set', funck)
 
         // ** Call getters upstream **
 
@@ -77,7 +77,7 @@
             // setTimeout(f,0), to be consistent with other calls to
             // .on_set.
             backup_cache[key] = backup_cache[key] || {key: key}
-            run_handler(funk, 'on_set', cache[key] = cache[key] || {key: key})
+            run_handler(funck, 'on_set', cache[key] = cache[key] || {key: key})
         }
     }
     function get_once (key, cb) {
@@ -108,7 +108,9 @@
 
         t = t || {}
         // Make sure it has a version.
-        t.version = t.version || new_version()
+        t.version = t.version
+            || (executing_funk && executing_funk.reacting_at)
+            || new_version()
 
         if ((executing_funk !== global_funk) && executing_funk.loading()) {
             abort_change(obj.key)
@@ -134,6 +136,7 @@
             var num_handlers = bus.route(obj.key, 'to_set', obj, t)
             if (num_handlers === 0) {
                 // And fire if there weren't any!
+                // ... hmmm... should this just be moved into route() itself?
                 set.fire(obj, t)
                 bus.route(obj.key, 'on_set_sync', obj, t)
             }
@@ -164,6 +167,12 @@
         })
     }
     set.fire = fire
+
+    // Fire is called once a change is *valid* and it's time to make it
+    // official, and broadcast post it to everyone.  This function:
+    //  - Prints a statelog entry
+    //  - Updates the cache
+    //  - Marks it changed so that everyone updates
     function fire (obj, t) {
         // Here's a stupid hack to make it backwards compatible with state
         // that puts fields directly on the {key: ...} object itself:
@@ -416,7 +425,7 @@
             || !(deep_equals(object, backup_cache[object.key]))
     }
     function abort_change (key) {
-        update_cache(backup_cache[key], cache)
+        update_cache(backup_cache[key] || {key:key}, cache)
     }
 
 
@@ -443,7 +452,6 @@
                          )
             console.trace()
             return
-            // throw Error('asdfalsdkfajsdf')
         }
 
         subscriptions_to_us.delete(key, fkey)
@@ -458,21 +466,10 @@
                 // Send a forget upstream
                 bus.route(key, 'to_forget', key)
 
-                // Delete the cache entry...?
-                // delete cache[key]
+                delete cache[key]
                 delete subscriptions_from_us[key]
                 delete to_be_forgotten[key]
-
-                // Todo: deactivate any reactive .to_get handler, or
-                // .on_set handler.
             }, 200)
-
-            // BUG: The delay on forgetting means that reactive functions that
-            // call forget() will still get re-run for a while.  For now, they
-            // cannot depend on forget() making them not re-run
-            // immediately... we could fix this by adding a check when
-            // re-running for a key to see if the key is in to_be_forgotten,
-            // and not run anything that is supposed to be forgotten.
         }
     }
     function del (key) {
@@ -531,6 +528,7 @@
         // If none found, then just mark the key changed
         if (!found && cache.hasOwnProperty(key)) mark_changed(key, t)
     }
+    var touch = dirty
 
     function mark_changed (key, t) {
         // Marks a key as dirty, meaning that functions on it need to update
@@ -604,7 +602,7 @@
                     }
                     autodetect_args(f)
                     f = run_handler(f, 'on_set', cache[keys[i]], {dont_run: true,
-                                                                   binding: keys[i]})
+                                                                  binding: keys[i]})
                 }
                 result.push(funk_key(f))
             }
@@ -842,6 +840,8 @@
                     bus.backup_cache[key] = bus.backup_cache[key] || {key: key}
                     bus.set.abort(bus.cache[key])
                 }
+
+            // Install the t.done() function
             if (method !== 'to_forget')
                 t.done = function (o) {
                     var key = method === 'to_set' ? arg.key : arg
@@ -862,12 +862,13 @@
                     else if (method === 'to_set') {
                         bus.set.fire(o || arg, t)
                         bus.route(key, 'on_set_sync', o||arg, t)
-                    } else { // Then method === to_get
+                    } else if (method === 'to_get') {
                         o.key = key
                         bus.set.fire(o, t)
                         // And now reset the version cause it could get called again
                         delete t.version
-                    }
+                    } else if (method === 'on_set_sync') {}
+                    else throw "Just kidding.  This can't happen.  There aren't any other methods."
                 }
             t.return = t.done
             if (method === 'to_set')
@@ -956,6 +957,10 @@
             subscriptions_from_us[key] = subscriptions_from_us[key] || []
             subscriptions_from_us[key].push(f)   // Record active to_get handler
             pending_gets[key] = f   // Record that the get is pending
+
+            // Last, let's mark this function as a to_getter, so that we treat
+            // it special inside get()
+            f.to_getter = true
         }
 
         if (just_make_it)
@@ -1013,7 +1018,7 @@
             console.assert(executing_funk === global_funk
                            || executing_funk !== funk, 'Recursive funk', funk.func)
 
-            if (funk.called_directly)
+            if (!funk.reacting)
                 funk.this = this, funk.args = arguments
 
             // Forget the keys from last time
@@ -1059,7 +1064,7 @@
         }
 
         funk.func = func  // just for debugging
-        funk.called_directly = true
+        funk.reacting = false
         funk.subscribed_to_keys = {} // maps [bus,key] to version
                                // version will be undefined until loaded
         funk.abortable_keys = []
@@ -1074,10 +1079,10 @@
         funk.react = function () {
             var result
             try {
-                funk.called_directly = false
+                funk.reacting = true
                 result = funk()
             } finally {
-                funk.called_directly = true
+                funk.reacting = false
             }
             return result
         }
@@ -1609,6 +1614,7 @@
             || (m.forget && 'forget')
     }
 
+    // http2 client
     function h2_mount (prefix, url, client_creds) {
         var preprefix = prefix.slice(0,-1)
         var is_absolute = /^https?:\/\//
@@ -2393,7 +2399,7 @@
     }
 
     // Make these private methods accessible
-    var api = ['cache backup_cache get set forget del fire dirty get_once',
+    var api = ['cache backup_cache get set forget del fire dirty touch get_once',
                'subspace bindings run_handler bind unbind reactive uncallback',
                'versions new_version',
                'make_proxy state sb',

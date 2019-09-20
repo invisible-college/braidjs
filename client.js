@@ -3,6 +3,142 @@
 
     // ****************
     // Connecting over the Network
+    // function http_client (url_prefix) {
+    //     // bus(url_prefix).to_fetch = function (key) {
+    //     //     var rest = key.substr(0,url_prefix.length)
+    //     //     fetch(
+    //     // }
+
+    //         // Build request
+    //         var request = new XMLHttpRequest()
+    //         request.onload = function () {
+    //             // delete pending_gets[key]
+    //             if (request.status === 200) {
+    //                 var result = JSON.parse(request.responseText)
+    //                 put(result, null, this)
+    //             }
+    //             else if (request.status === 500)
+    //                 if (window.on_ajax_error) window.on_ajax_error()
+    //         }
+
+    //         // Open request
+    //         // pending_gets[key] = request
+    //         request.open('GET', url_prefix + key, true)
+    //         request.setRequestHeader('Accept','application/json')
+    //         request.setRequestHeader('X-Requested-With','XMLHttpRequest')
+
+    //         request.send(null)
+    //     }
+
+    //     this.put = function(object, continuation) {
+    //         console.error('Xmlhttperequest.put is unfinished')
+
+    //         console.log('pending saves', pending_puts[object.key])
+    //         if (pending_puts[object.key]) {
+    //             console.log('Yo foo, aborting')
+    //             pending_puts[object.key].abort()
+    //             delete pending_puts[object.key]
+    //         }
+
+    //         var original_key = object.key
+            
+    //         // Special case for /new.  Grab the pieces of the URL.
+    //         // var pattern = new RegExp("/new/([^/]+)/(\\d+)")
+    //         // var match = original_key.match(pattern)
+    //         // var url = (match && '/' + match[1]) || original_key
+
+    //         // Build request
+    //         var request = new XMLHttpRequest()
+    //         request.onload = function () {
+    //             // No longer pending
+    //             delete pending_puts[original_key]
+
+    //             if (request.status === 200) {
+    //                 var result = JSON.parse(request.responseText)
+    //                 // console.log('New save result', result)
+    //                 // Handle /new/stuff
+    //                 // deep_map(function (obj) {
+    //                 //     match = obj.key && obj.key.match(/(.*)\?original_id=(\d+)$/)
+    //                 //     if (match && match[2]) {
+    //                 //         // Let's map the old and new together
+    //                 //         var new_key = match[1]                // It's got a fresh key
+    //                 //         cache[new_key] = cache[original_key]  // Point them at the same thing
+    //                 //         obj.key = new_key                     // And it's no longer "/new/*"
+    //                 //     }
+    //                 // },
+    //                 //          result)
+
+    //                 // TODO: Handle rename events: {key:'other_event', command:___}
+
+    //                 put(result, null, this)
+    //                 if (continuation) continuation()
+    //             }
+    //             else if (request.status === 500)
+    //                 window.ajax_error && window.ajax_error()
+    //         }
+
+    //         object = clone(object)
+    //         object['authenticity_token'] = csrf()
+
+    //         // Open request
+    //         var POST_or_PUT = match ? 'POST' : 'PUT'
+    //         request.open(POST_or_PUT, url, true)
+    //         request.setRequestHeader('Accept','application/json')
+    //         request.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+    //         request.setRequestHeader('X-CSRF-Token', csrf())
+    //         request.setRequestHeader('X-Requested-With','XMLHttpRequest')
+    //         request.send(JSON.stringify(object))
+
+    //         // Remember it
+    //         pending_puts[original_key] = request
+    //     }
+
+    //     this.del = function(key, continuation) {
+    //         // Build request
+    //         var request = new XMLHttpRequest()
+    //         request.onload = function () {
+    //             if (request.status === 200) {
+    //                 console.log('Delete returned for', key)
+    //                 var result = JSON.parse(request.responseText)
+    //                 delete cache[key]
+    //                 put(result, null, this)
+    //                 if (continuation) continuation()
+    //             }
+    //             else if (request.status === 500)
+    //                 if (window.on_ajax_error) window.on_ajax_error()
+    //             else {
+    //                 // TODO: give user feedback that DELETE failed
+    //                 console.log('DELETE of', key, 'failed!')
+    //             }
+
+    //         }
+
+    //         payload = {'authenticity_token': csrf()}
+
+    //         // Open request
+    //         request.open('DELETE', url_prefix + key, true)
+    //         request.setRequestHeader('Accept','application/json')
+    //         request.setRequestHeader("Content-Type", "application/json;charset=UTF-8");
+    //         request.setRequestHeader('X-CSRF-Token', csrf())
+    //         request.setRequestHeader('X-Requested-With','XMLHttpRequest')
+    //         request.send(JSON.stringify(payload))
+    //     }
+
+    //     var csrf_token = null
+    //     this.csrf = function (new_token) {
+    //         if (new_token) csrf_token = new_token
+    //         if (csrf_token) return csrf_token
+    //         var metas = document.getElementsByTagName('meta')
+    //         for (i=0; i<metas.length; i++) {
+    //             if (metas[i].getAttribute("name") == "csrf-token") {
+    //                 return metas[i].getAttribute("content");
+    //             }
+    //         }
+    //         return ""
+    //     }
+
+    // }
+
     function set_cookie (key, val) {
         document.cookie = key + '=' + val + '; Expires=21 Oct 2025 00:0:00 GMT;'
     }
@@ -163,7 +299,7 @@
     var components = {}                  // Indexed by 'component/0', 'component/1', etc.
     var components_count = 0
     var dirty_components = {}
-    function React_View(component) {
+    function createReactClass(component) {
         function wrap(name, new_func) {
             var old_func = component[name]
             component[name] = function wrapper () { return new_func.bind(this)(old_func) }
@@ -191,7 +327,7 @@
             var orig_render = this.render
             this.render = bus.reactive(function () {
                 console.assert(this !== window)
-                if (this.render.called_directly) {
+                if (!this.render.reacting) {
                     delete dirty_components[this.key]
 
                     // Add reactivity to any keys passed inside objects in props.
@@ -281,8 +417,8 @@
         result.prototype = react_class.prototype
         return result
     }
-    window.React_View = React_View
-    if (window.braid) window.braid.create_react_class = React_View
+    window.createReactClass = createReactClass
+    if (window.braid) window.braid.createReactClass = createReactClass
 
     // *****************
     // Re-rendering react components
@@ -315,7 +451,7 @@
     // ###  Full-featured single-file app methods
     // ###
 
-    function make_client_braid_maker () {
+    function make_client_bus_maker () {
         var extra_stuff = ['localstorage_client make_websocket client_creds',
                            'url_store components live_reload_from'].join(' ').split(' ')
         if (window.braid) {
@@ -330,7 +466,6 @@
         }
     }
 
-    load_scripts() // This function could actually be inlined
     function load_scripts() {
         // console.info('Loading scripts!', window.braid)
         if (!window.braid) {
@@ -348,9 +483,11 @@
 
             for (var name in js_urls)
                 document.write('<script src="' + js_urls[name] + '" charset="utf-8"></script>')
-        }
 
-        document.addEventListener('DOMContentLoaded', scripts_ready, false)
+            document.addEventListener('DOMContentLoaded', scripts_ready, false)
+        } else
+            scripts_ready()
+
     }
 
     function script_option (option_name) {
@@ -364,12 +501,12 @@
     var react_render
     function scripts_ready () {
         react_render = React.version >= '0.14.' ? ReactDOM.render : React.render
-        make_client_braid_maker()
+        make_client_bus_maker()
         window.bus = window.braid()
         window.bus.label = 'bus'
         window.sb = bus.sb
-        braid.widget = React_View
-        braid.create_react_class = React_View
+        braid.widget = createReactClass
+        braid.createReactClass = createReactClass
 
         improve_react()
         window.dom = window.ui = window.dom || window.ui || {}
@@ -550,13 +687,14 @@
 
     // Load the components
     var users_widgets = {}
-    function make_component(name, safe_renders) {
-        // Define the component
+    function make_component(name) {
+        var func = window.dom[name]
 
-        window[name] = users_widgets[name] = window.React_View({
+        // Define the component
+        window[name] = users_widgets[name] = window.createReactClass({
             displayName: name,
             render: function () {
-                var args = [], func = window.dom[name]
+                var args = []
 
                 // Parse the function's args, and pass props into them directly
                 autodetect_args(func)
@@ -566,14 +704,11 @@
 
                 // Now run the function.
                 var vdom
-                if (safe_renders)
-                    try {
-                        vdom = func.apply(this, args)
-                    } catch (error) {
-                        console.error(error)
-                    }
-                else  // TODO: kill support for this safe_renders = false branch?
+                try {
                     vdom = func.apply(this, args)
+                } catch (error) {
+                    console.error(error)
+                }
 
                 // This automatically adds two attributes "data-key" and
                 // "data-widget" to the root node of every react component.
@@ -591,120 +726,23 @@
                 return vdom
             },
             componentDidMount: function () {
-                var refresh = window.dom[name].refresh
+                var refresh = func.refresh
                 refresh && refresh.bind(this)()
             },
             componentWillUnmount: function () {
-                var down = window.dom[name].down
+                var down = func.down
                 return down && down.bind(this)()
             },
             componentDidUpdate: function () {
                 if (!this.initial_render_complete && !this.loading()) {
                     this.initial_render_complete = true
-                    var up = window.dom[name].up
+                    var up = func.up
                     up && up.bind(this)()
                 }
-                var refresh = window.dom[name].refresh
+                var refresh = func.refresh
                 return refresh && refresh.bind(this)()
             },
             getInitialState: function () { return {} }
-        })
-    }
-
-    function make_syncarea () {
-        // a textarea that syncs with other textareas via diffsync
-        // options:
-        //     textarea_style : hashmap of styles to add to the textarea
-        //     cursor_style : hashmap of styles to add to each peer's cursor
-        //     autosize : true --> resizes the textarea vertically to fit the text inside it
-        //     ws_url : websocket url for the diffsync server,
-        //              e.g. 'wss://invisible.college:' + diffsync.port
-        //     channel : 'diffsync_channel' --> diffsync channel to connect to
-        window['SYNCAREA'] = users_widgets['SYNCAREA'] = React.createClass({
-            getInitialState : function () {
-                return { cursor_positions : {} }
-            },
-            on_text_changed : function () {
-                if (this.props.autosize) {
-                    var t = this.textarea_ref
-                    t.style.height = null
-                    while (t.rows > 1 && t.scrollHeight < t.offsetHeight) t.rows--
-                    while (t.scrollHeight > t.offsetHeight) t.rows++
-                }
-            },
-            componentDidMount : function () {
-                var self = this
-                self.on_ranges = function (ranges) {
-                    self.ranges = ranges
-                    var cursor_positions = {}
-                    Object.keys(ranges).forEach(function (k) {
-                        var r = ranges[k]
-                        var xy = getCaretCoordinates(self.textarea_ref, r[0])
-                        var x = self.textarea_ref.offsetLeft - self.textarea_ref.scrollLeft + xy.left + 'px'
-                        var y = self.textarea_ref.offsetTop - self.textarea_ref.scrollTop + xy.top + 'px'
-                        cursor_positions[k] = [x, y]
-                    })
-                    self.setState({ cursor_positions : cursor_positions })
-                }
-
-                this.ds = diffsync.create_client({
-                    ws_url : this.props.ws_url,
-                    channel : this.props.channel,
-                    get_text : function () {
-                        return self.textarea_ref.value
-                    },
-                    get_range : function () {
-                        var t = self.textarea_ref
-                        return [t.selectionStart, t.selectionEnd]
-                    },
-                    on_text : function (s, range) {
-                        self.textarea_ref.value = s
-                        self.textarea_ref.setSelectionRange(range[0], range[1])
-                        self.on_text_changed()
-                    },
-                    on_ranges : this.on_ranges
-                })
-            },
-            render : function () {
-                var self = this
-                var cursors = []
-                Object.keys(this.state.cursor_positions).forEach(function (k) {
-                    var p = self.state.cursor_positions[k]
-                    var style = {
-                        position : 'absolute',
-                        left : p[0],
-                        top : p[1]
-                    }
-                    Object.keys(self.props.cursor_style).forEach(function (k) {
-                        style[k] = self.props.cursor_style[k]
-                    })
-                    cursors.push(React.createElement('div', {
-                        key : k,
-                        style : style
-                    }))
-                })
-                return React.createElement('div', {
-                    style : {
-                        clipPath : 'inset(0px 0px 0px 0px)'
-                    },
-                }, React.createElement('textarea', {
-                    ref : function (t) { self.textarea_ref = t },
-                    style : this.props.textarea_style,
-                    onChange : function (e) {
-                        self.ds.on_change()
-                        self.on_text_changed()
-                    },
-                    onMouseDown : function () {
-                        setTimeout(function () { self.ds.on_change() }, 0)
-                    },
-                    onKeyDown : function () {
-                        setTimeout(function () { self.ds.on_change() }, 0)
-                    },
-                    onScroll : function () {
-                        self.on_ranges(self.ranges)
-                    }
-                }), cursors)
-            }
         })
     }
 
@@ -744,7 +782,7 @@
         for (var k in ui) dom[k] = dom[k] || ui[k]
         for (var widget_name in dom) {
             window.dom[widget_name] = dom[widget_name]
-            make_component(widget_name, safe)
+            make_component(widget_name)
         }
     }
     function load_coffee () {
@@ -767,6 +805,7 @@
 
     function dom_to_widget (node) {
         if (node.nodeName === '#text') return node.textContent
+        if (!(node.nodeName in users_widgets)) return node
 
         node.seen = true
         var children = [], props = {}
@@ -795,4 +834,5 @@
                     react_render(dom_to_widget(nodes[i]), nodes[i])
         }
     }
+    load_scripts()
 })()

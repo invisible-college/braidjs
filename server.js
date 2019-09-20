@@ -2299,7 +2299,7 @@ function import_server (bus, options)
 
     // Installs a GET handler at route that gets state from a getter function
     // Note: Makes too many textbusses.  Should re-use one.
-    http_serve: function http_serve (route, getter) {
+    http_serve: function http_serve (route, getter, headers) {
         var textbus = require('./braid')()
         textbus.label = 'textbus'
         var watched = new Set()
@@ -2321,7 +2321,8 @@ function import_server (bus, options)
                 // res.setHeader('Cache-Control', 'public, max-age='
                 //               + (60 * 60 * 24 * 30))  // 1 month
                 res.setHeader('ETag', o.etag)
-                res.setHeader('content-type', 'application/javascript')
+                for (var k in headers)
+                    res.setHeader(k, headers[k])
                 res.send(o._)
                 textbus.forget(o.key, cb)  // But we do want to forget the cb
             })
@@ -2360,7 +2361,8 @@ function import_server (bus, options)
                 return compiled
             }
             else return source
-        })
+        }, {'content-type': 'application/javascript',
+            'Access-Control-Allow-Origin': '*'})
     },
 
     serve_clientjs: function serve_clientjs (path) {
