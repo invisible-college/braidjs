@@ -158,7 +158,7 @@ function sync9_create_peer(p_funcs) {
         versions.forEach(v => {
             if (versions_T[v.vid]) {
                 new_versions.push(v)
-                sync9_add_version(self.s9, v.vid, v.parents, v.changes)
+                sync9_add_version(self.s9, v.vid, v.parents, v.patches)
             }
         })
         
@@ -261,30 +261,30 @@ function sync9_create_peer(p_funcs) {
     }
     
     // Sets the value internally, and sends a message to all peers
-    self.local_set = (vid, parents, changes, joiner_num) => {
-        sync9_add_version(self.s9, vid, parents, changes)
+    self.local_set = (vid, parents, patches, joiner_num) => {
+        sync9_add_version(self.s9, vid, parents, patches)
         var ps = get_true_peers()
         self.phase_one[vid] = {origin: null, count: ps.length}
         if (joiner_num) self.joiners[vid] = joiner_num
         ps.forEach(p => {
-            p_funcs.set(p, vid, parents, changes, joiner_num)
+            p_funcs.set(p, vid, parents, patches, joiner_num)
         })
         check_ack_count(vid)
     }
     
-    // This is like local_set, but does not send the change back to the
+    // This is like local_set, but does not send the patch back to the
     // originating peer `pid`.
     // This also counts the set as an ack from that peer. (The "phase_one" count.)
-    self.set = (pid, vid, parents, changes, joiner_num) => {
+    self.set = (pid, vid, parents, patches, joiner_num) => {
         if (!self.s9.T[vid] || (joiner_num > self.joiners[vid])) {
-            sync9_add_version(self.s9, vid, parents, changes)
+            sync9_add_version(self.s9, vid, parents, patches)
             
             var ps = get_true_peers()
             self.phase_one[vid] = {origin: pid, count: ps.length - 1}
             if (joiner_num) self.joiners[vid] = joiner_num
             ps.forEach(p => {
                 if (p != pid)
-                    p_funcs.set(p, vid, parents, changes, joiner_num)
+                    p_funcs.set(p, vid, parents, patches, joiner_num)
             })
         } else if (self.phase_one[vid] && (joiner_num == self.joiners[vid])) {
             self.phase_one[vid].count--
@@ -445,7 +445,7 @@ function sync9_create_peer(p_funcs) {
 function sync9_extract_versions(x, is_anc, is_new_anc) {
     var versions = sync9_space_dag_extract_versions(sync9_space_dag_get(x.val.S, 0).S, x, is_anc, is_new_anc)
     versions.forEach(x => {
-        x.changes = x.splices.map(x => {
+        x.patches = x.splices.map(x => {
             return `[${x[0]}:${x[0] + x[1]}] = ${JSON.stringify(x[2])}`
         })
         delete x.splices
@@ -653,7 +653,7 @@ function sync9_create() {
     }
 }
 
-function sync9_add_version(x, vid, parents, changes, is_anc) {
+function sync9_add_version(x, vid, parents, patches, is_anc) {
     if (x.T[vid]) return
     x.T[vid] = Object.assign({}, parents)
     
@@ -671,8 +671,8 @@ function sync9_add_version(x, vid, parents, changes, is_anc) {
         }
     }
     
-    changes.forEach(change => {
-        var parse = sync9_parse_change(change)
+    patches.forEach(patch => {
+        var parse = sync9_parse_patch(patch)
         var cur = x.val
         parse.keys.forEach((key, i) => {
             if (cur.t == 'val') cur = sync9_space_dag_get(cur.S, 0, is_anc)
@@ -986,26 +986,26 @@ function sync9_get_ancestors(x, vids) {
     return ancs
 }
 
-function sync9_parse_change(change) {
-    var ret = { keys : [] }
+function sync9_parse_patch(patch) {
+    var result = { keys : [] }
     
     var re = /\.?([^\.\[ =]+)|\[((\-?\d+)(:\-?\d+)?|'(\\'|[^'])*'|"(\\"|[^"])*")\]|\s*=\s*(.*)/g
     var m
-    while (m = re.exec(change)) {
+    while (m = re.exec(patch)) {
         if (m[1])
-            ret.keys.push(m[1])
+            result.keys.push(m[1])
         else if (m[2] && m[4])
-            ret.range = [
+            result.range = [
                 JSON.parse(m[3]),
                 JSON.parse(m[4].substr(1))
             ]
         else if (m[2])
-            ret.keys.push(JSON.parse(m[2]))
+            result.keys.push(JSON.parse(m[2]))
         else if (m[7])
-            ret.val = JSON.parse(m[7])
+            result.val = JSON.parse(m[7])
     }
     
-    return ret
+    return result
 }
 
 function sync9_diff_ODI(a, b) {
