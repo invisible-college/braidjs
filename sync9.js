@@ -738,7 +738,7 @@ function sync9_read(x, is_anc) {
 
 function sync9_read_version(s9, version) {
     if (version)
-        var ancs = sync9_get_ancestors(s9.T, {[version]:true})
+        var ancs = sync9_get_ancestors(s9, {[version]:true})
     return sync9_read(s9, ancs && (x=>ancs[x]))
 }
 
