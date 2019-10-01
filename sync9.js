@@ -2,13 +2,39 @@
 
 module.exports = {create: sync9_create,
                   add_version: sync9_add_version,
-                  read: sync9_read,
+                  read: sync9_read_version,
                   get_ancestors: sync9_get_ancestors,
                   extract_versions: sync9_extract_versions,
                   prune: sync9_prune,
                   prune2: sync9_prune2,
                   trav_space_dag: sync9_trav_space_dag,
-                  get_space_dag: sync9_space_dag_get
+                  get_space_dag: sync9_space_dag_get,
+                  sink
+}
+
+function version(T, id) {
+    return {
+        id: id,
+        parents: () => Object.keys(T[id]).map(x=>version(T, x))
+    }
+}
+function sink() {
+    var s9 = sync9_create()
+    var now = () => Object.keys(s9.leaves).map(x=>version(s9.T, x))
+    return {
+        s9:s9,
+        set: (patch, version, parents) => {
+            version = version || sync9_guid()
+            parents = parents || s9.leaves
+            if (!Array.isArray(patch))
+                patch = [patch]
+            return sync9_add_version(s9, version, parents, patch)
+        },
+        get: (version) => sync9_read_version(s9, version),
+        time: s9.T,
+        current_version: now,
+        now: now
+    }
 }
 
 function sync9_create_peer(p_funcs) {
@@ -648,7 +674,7 @@ function sync9_add_version(x, vid, parents, changes, is_anc) {
     changes.forEach(change => {
         var parse = sync9_parse_change(change)
         var cur = x.val
-        each(parse.keys, (key, i) => {
+        parse.keys.forEach((key, i) => {
             if (cur.t == 'val') cur = sync9_space_dag_get(cur.S, 0, is_anc)
             if (!cur) throw 'bad'
             if (typeof(key) == 'string' && cur.t == 'obj') {
@@ -708,6 +734,12 @@ function sync9_read(x, is_anc) {
             return s.join('')
         }
     } return x
+}
+
+function sync9_read_version(s9, version) {
+    if (version)
+        var ancs = sync9_get_ancestors(s9.T, {[version]:true})
+    return sync9_read(s9, ancs && (x=>ancs[x]))
 }
 
 function sync9_wrap(x, vid) {
@@ -940,11 +972,6 @@ function sync9_trav_space_dag(S, f, cb, view_deleted, tail_cb) {
     } catch (e) {
         if (e != exit_early) throw e
     }
-}
-
-function sync9_read_version(T, version) {
-    var ancs = sync9_get_ancestors(T, {[version]:true})
-    return sync9_read(s9, x=>ancs[x])
 }
 
 function sync9_get_ancestors(x, vids) {
