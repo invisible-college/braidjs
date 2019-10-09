@@ -12,15 +12,37 @@ module.exports = {create: sync9_create,
                   sink
 }
 
-function version(T, id) {
-    return {
-        id: id,
-        parents: () => Object.keys(T[id]).map(x=>version(T, x))
-    }
-}
 function sink() {
     var s9 = sync9_create()
-    var now = () => Object.keys(s9.leaves).map(x=>version(s9.T, x))
+
+    // The `version` object
+    function version(ids) {
+        // console.log('version: creating for', ids)
+        if (typeof ids === 'string') {
+            var id = ids
+            ids = [id]
+        } else {
+            if (Object.keys(ids).length === 0)
+                return null
+            var id = Object.keys(ids).sort().join('-')
+        }
+
+        return {
+            id: id,
+            parents: () => Object.keys(s9.T[id]).map(version),
+            parent: () => {
+                var parents = {}
+                for (var k in ids) for (var j in s9.T[k])
+                    parents[j] = true
+                return version(parents)
+            },
+            toString: () => id
+        }
+    }
+
+    var now = () => version(s9.leaves)
+
+    // The `sink` object
     return {
         s9:s9,
         set: (patch, version, parents) => {
@@ -56,7 +78,9 @@ function sync9_create_peer(p_funcs) {
     self.fissures = {}
     self.conn_leaves = {}
     self.ack_leaves = {}
-    self.phase_one = {}
+    self.valid_leaves = {}
+    self.seen_local = {}
+    self.valid_local = {}
     self.joiners = {}
     
     self.connect = (pid, alpha) => {
@@ -71,12 +95,11 @@ function sync9_create_peer(p_funcs) {
     self.disconnect = pid => {
         if (!self.peers[pid]) return
         if (self.peers[pid].b) {
-            var nodes = {}
-            var ack_nodes = sync9_get_ancestors(self.s9, self.ack_leaves)
+            var versions = {}
+            var ack_versions = sync9_get_ancestors(self.s9, self.ack_leaves)
             Object.keys(self.s9.T).forEach(v => {
-                if (!ack_nodes[v] || self.ack_leaves[v]) {
-                    nodes[v] = true
-                }
+                if (!ack_versions[v] || self.ack_leaves[v])
+                    versions[v] = true
             })
             
             var fissure_parents = {}
@@ -88,7 +111,7 @@ function sync9_create_peer(p_funcs) {
                 a: self.uid,
                 b: self.peers[pid].b,
                 conn_id: self.peers[pid].conn_id,
-                nodes,
+                versions,
                 parents: fissure_parents
             })
         }
@@ -104,7 +127,7 @@ function sync9_create_peer(p_funcs) {
         if (!self.fissures[key]) {
             self.fissures[key] = fissure
             
-            self.phase_one = {}
+            self.seen_local = {}
             
             get_true_peers().forEach(p => {
                 if (p != pid) p_funcs.fissure(p, fissure)
@@ -115,7 +138,7 @@ function sync9_create_peer(p_funcs) {
                     a: self.uid,
                     b: fissure.a,
                     conn_id: fissure.conn_id,
-                    nodes: fissure.nodes,
+                    versions: fissure.versions,
                     parents: {}
                 })
             }
@@ -178,7 +201,7 @@ function sync9_create_peer(p_funcs) {
                     a: self.uid,
                     b: f.a,
                     conn_id: f.conn_id,
-                    nodes: f.nodes,
+                    versions: f.versions,
                     parents: {}
                 })
             }
@@ -194,14 +217,14 @@ function sync9_create_peer(p_funcs) {
         if (!conn_leaves)
             conn_leaves = Object.assign({}, self.s9.leaves)
 
-        var our_conn_nodes = sync9_get_ancestors(self.s9, self.conn_leaves)
-        var new_conn_nodes = sync9_get_ancestors(self.s9, conn_leaves)
+        var our_conn_versions = sync9_get_ancestors(self.s9, self.conn_leaves)
+        var new_conn_versions = sync9_get_ancestors(self.s9, conn_leaves)
         Object.keys(self.conn_leaves).forEach(x => {
-            if (new_conn_nodes[x] && !conn_leaves[x])
+            if (new_conn_versions[x] && !conn_leaves[x])
                 delete self.conn_leaves[x]
         })
         Object.keys(conn_leaves).forEach(x => {
-            if (!our_conn_nodes[x]) self.conn_leaves[x] = true
+            if (!our_conn_versions[x]) self.conn_leaves[x] = true
         })
         
         if (!min_leaves) {
@@ -215,22 +238,22 @@ function sync9_create_peer(p_funcs) {
             })
         }
 
-        // The min_nodes are the top of time in the "unacknowledge" region.
+        // The min_versions are the top of time in the "unacknowledge" region.
         // This becomes the new ack boundary.  It is calculated as the
         // intersection of this reconnecting peer's set of versions and our
         // versions.
-        var min_nodes = sync9_get_ancestors(self.s9, min_leaves)
-        var ack_nodes = sync9_get_ancestors(self.s9, self.ack_leaves)
+        var min_versions = sync9_get_ancestors(self.s9, min_leaves)
+        var ack_versions = sync9_get_ancestors(self.s9, self.ack_leaves)
         Object.keys(self.ack_leaves).forEach(x => {
-            if (!min_nodes[x]) delete self.ack_leaves[x]
+            if (!min_versions[x]) delete self.ack_leaves[x]
         })
         Object.keys(min_leaves).forEach(x => {
-            if (ack_nodes[x]) self.ack_leaves[x] = true    // Set the new ack boundary
+            if (ack_versions[x]) self.ack_leaves[x] = true    // Set the new ack boundary
         })
         
         // Now let's wipe out the current record of local acks!  Because any
         // global ack will have to include this new peer.
-        self.phase_one = {}
+        self.seen_local = {}
         
         // Now broadcast the set_multi to all of our peers
         if (new_versions.length > 0 || new_fissures.length > 0) {
@@ -250,7 +273,7 @@ function sync9_create_peer(p_funcs) {
                 marks[v] = true
                 delete self.conn_leaves[v]
                 delete self.ack_leaves[v]
-                delete self.phase_one[v]
+                delete self.seen_local[v]
                 delete self.joiners[v]
                 Object.keys(self.s9.T[v]).forEach(f)
             }
@@ -264,7 +287,13 @@ function sync9_create_peer(p_funcs) {
     self.local_set = (vid, parents, patches, joiner_num) => {
         sync9_add_version(self.s9, vid, parents, patches)
         var ps = get_true_peers()
-        self.phase_one[vid] = {origin: null, count: ps.length}
+        self.seen_local[vid] = {origin: null, count: ps.length}
+        self.valid_local[vid] = {origin: null, count: 0}
+        // Now call any handlers, which add to valid.count
+
+        // seen_local -> waiting_to_see
+        // valid_local -> waiting_to_validate
+
         if (joiner_num) self.joiners[vid] = joiner_num
         ps.forEach(p => {
             p_funcs.set(p, vid, parents, patches, joiner_num)
@@ -274,35 +303,41 @@ function sync9_create_peer(p_funcs) {
     
     // This is like local_set, but does not send the patch back to the
     // originating peer `pid`.
-    // This also counts the set as an ack from that peer. (The "phase_one" count.)
+    // This also counts the set as an ack from that peer. (The "seen_local" count.)
     self.set = (pid, vid, parents, patches, joiner_num) => {
         if (!self.s9.T[vid] || (joiner_num > self.joiners[vid])) {
             sync9_add_version(self.s9, vid, parents, patches)
             
             var ps = get_true_peers()
-            self.phase_one[vid] = {origin: pid, count: ps.length - 1}
+            self.seen_local[vid] = {origin: pid, count: ps.length - 1}
+            self.valid_local[vid] = {origin: null, count: 0}
+            // Now call any handlers, which add to valid.count
+
+            // seen_local -> waiting_to_see
+            // valid_local -> waiting_to_validate
+
             if (joiner_num) self.joiners[vid] = joiner_num
             ps.forEach(p => {
                 if (p != pid)
                     p_funcs.set(p, vid, parents, patches, joiner_num)
             })
-        } else if (self.phase_one[vid] && (joiner_num == self.joiners[vid])) {
-            self.phase_one[vid].count--
-        }
+        } else if (self.seen_local[vid] && (joiner_num == self.joiners[vid]))
+            self.seen_local[vid].count--
+
         check_ack_count(vid)
     }
     
     self.ack = (pid, vid, joiner_num) => {
-        if (self.phase_one[vid] && (joiner_num == self.joiners[vid])) {
-            self.phase_one[vid].count--
+        if (self.seen_local[vid] && (joiner_num == self.joiners[vid])) {
+            self.seen_local[vid].count--
             check_ack_count(vid)
         }
     }
     
     function check_ack_count(vid) {
-        if (self.phase_one[vid] && self.phase_one[vid].count == 0) {
-            if (self.phase_one[vid].origin)
-                p_funcs.ack(self.phase_one[vid].origin, vid, self.joiners[vid])
+        if (self.seen_local[vid] && self.seen_local[vid].count == 0) {
+            if (self.seen_local[vid].origin)
+                p_funcs.ack(self.seen_local[vid].origin, vid, self.joiners[vid])
             else {
                 add_full_ack_leaf(vid)
                 get_true_peers().forEach(p => {
@@ -327,6 +362,46 @@ function sync9_create_peer(p_funcs) {
         })
     }
     
+    self.local_valid_ack = (pid, vid) => {
+        if (self.valid_local[vid]) {
+            self.valid_local[vid].count--
+            check_valid_count(vid)
+        }
+    }
+    function check_valid_count (vid) {
+        if (self.valid_local[vid] && self.valid_local[vid].count == 0) {
+            if (self.valid_local[vid].origin)
+                p_funcs.local_ack_valid(self.valid_local[vid].origin, vid)
+            else {
+                console.log('Validate!!!! (fill this in)')
+                console.log('Does validating a leaf make all ancestors valid?')
+                get_true_peers().forEach(p => {
+                    p_funcs.global_valid_ack(p, vid)
+                })
+            }
+        }
+    }
+    self.global_valid_ack = (pid, vid) => {
+        add_global_valid_ack_leaf(vid)
+        get_true_peers().forEach(p => {
+            if (p != pid) p_funcs.global_valid_ack(p, vid)
+        })
+    }
+
+    function add_global_valid_ack_leaf(vid) {
+        var marks = {}
+        function f(v) {
+            if (!marks[v]) {
+                marks[v] = true
+                delete self.valid_leaves[v]
+                delete self.valid_local[v]
+                Object.keys(self.s9.T[v]).forEach(f)
+            }
+        }
+        f(vid)
+        self.valid_leaves[vid] = true
+    }
+
     self.prune = () => {
         var tags = {}
         var frozen = {root: true}
@@ -340,7 +415,7 @@ function sync9_create_peer(p_funcs) {
             }
         }
         Object.entries(self.fissures).forEach(x => {
-            Object.keys(x[1].nodes).forEach(v => {
+            Object.keys(x[1].versions).forEach(v => {
                 if (!self.s9.T[v]) return
                 tag(v, v)
                 frozen[v] = true
@@ -397,7 +472,7 @@ function sync9_create_peer(p_funcs) {
                 done[x[0]] = true
                 done[other_key] = true
                 
-                if (Object.keys(x[1].nodes).every(x => acked[x] || !self.s9.T[x])) {
+                if (Object.keys(x[1].versions).every(x => acked[x] || !self.s9.T[x])) {
                     delete self.fissures[x[0]]
                     delete self.fissures[other_key]
                 }
@@ -499,31 +574,31 @@ function sync9_space_dag_extract_versions(S, s9, is_anc) {
 
 
 function sync9_prune2(x, has_everyone_whos_seen_a_seen_b) {
-    var seen_nodes = {}
+    var seen_versions = {}
     var did_something = true
     function rec(x) {
         if (x && typeof(x) == 'object') {
             if (!x.t && x.val) {
                 rec(x.val)
             } else if (x.t == 'val') {
-                if (sync9_space_dag_prune2(x.S, has_everyone_whos_seen_a_seen_b, seen_nodes)) did_something = true
+                if (sync9_space_dag_prune2(x.S, has_everyone_whos_seen_a_seen_b, seen_versions)) did_something = true
                 sync9_trav_space_dag(x.S, () => true, node => {
                     node.elems.forEach(rec)
                 }, true)
             } else if (x.t == 'obj') {
                 Object.values(x.S).forEach(v => rec(v))
             } else if (x.t == 'arr') {
-                if (sync9_space_dag_prune2(x.S, has_everyone_whos_seen_a_seen_b, seen_nodes)) did_something = true
+                if (sync9_space_dag_prune2(x.S, has_everyone_whos_seen_a_seen_b, seen_versions)) did_something = true
                 sync9_trav_space_dag(x.S, () => true, node => {
                     node.elems.forEach(rec)
                 }, true)
             } else if (x.t == 'str') {
-                if (sync9_space_dag_prune2(x.S, has_everyone_whos_seen_a_seen_b, seen_nodes)) did_something = true
+                if (sync9_space_dag_prune2(x.S, has_everyone_whos_seen_a_seen_b, seen_versions)) did_something = true
             }
         }
     }
     while (did_something) {
-        seen_nodes = {}
+        seen_versions = {}
         did_something = false
         rec(x)
     }
@@ -537,7 +612,7 @@ function sync9_prune2(x, has_everyone_whos_seen_a_seen_b) {
         })
     })
     Object.keys(x.T).forEach(y => {
-        if (!seen_nodes[y] && Object.keys(children[y] || {}).some(z => has_everyone_whos_seen_a_seen_b(y, z))) delete_us[y] = true
+        if (!seen_versions[y] && Object.keys(children[y] || {}).some(z => has_everyone_whos_seen_a_seen_b(y, z))) delete_us[y] = true
     })
 
     var visited = {}
@@ -565,7 +640,7 @@ function sync9_prune2(x, has_everyone_whos_seen_a_seen_b) {
     return delete_us
 }
 
-function sync9_space_dag_prune2(S, has_everyone_whos_seen_a_seen_b, seen_nodes) {
+function sync9_space_dag_prune2(S, has_everyone_whos_seen_a_seen_b, seen_versions) {
     function set_nnnext(node, next) {
         while (node.next) node = node.next
         node.next = next
@@ -614,7 +689,7 @@ function sync9_space_dag_prune2(S, has_everyone_whos_seen_a_seen_b, seen_nodes) 
             delete node.gash
             return true
         } else {
-            Object.assign(seen_nodes, node.deleted_by)
+            Object.assign(seen_versions, node.deleted_by)
         }
         
         if (next && !next.nexts[0] && (Object.keys(next.deleted_by).some(k => has_everyone_whos_seen_a_seen_b(vid, k)) || next.elems.length == 0)) {
@@ -635,7 +710,7 @@ function sync9_space_dag_prune2(S, has_everyone_whos_seen_a_seen_b, seen_nodes) 
     }
     var did_something = false
     sync9_trav_space_dag(S, () => true, (node, offset, has_nexts, prev, vid) => {
-        if (!prev) seen_nodes[vid] = true
+        if (!prev) seen_versions[vid] = true
         while (process_node(node, offset, vid, prev)) {
             did_something = true
         }
@@ -1095,24 +1170,24 @@ function sync9_create_proxy(x, cb, path) {
 }
 
 function sync9_prune(x, has_everyone_whos_seen_a_seen_b, has_everyone_whos_seen_a_seen_b_2) {
-    var seen_nodes = {}
+    var seen_versions = {}
     var did_something = true
     function rec(x) {
         if (x && typeof(x) == 'object') {
             if (!x.t && x.val) {
                 rec(x.val)
             } else if (x.t == 'val') {
-                if (sync9_space_dag_prune(x.S, has_everyone_whos_seen_a_seen_b, seen_nodes)) did_something = true
+                if (sync9_space_dag_prune(x.S, has_everyone_whos_seen_a_seen_b, seen_versions)) did_something = true
                 rec(sync9_space_dag_get(x.S, 0))
             } else if (x.t == 'obj') {
                 Object.values(x.S).forEach(v => rec(v))
             } else if (x.t == 'arr') {
-                if (sync9_space_dag_prune(x.S, has_everyone_whos_seen_a_seen_b, seen_nodes)) did_something = true
+                if (sync9_space_dag_prune(x.S, has_everyone_whos_seen_a_seen_b, seen_versions)) did_something = true
                 sync9_trav_space_dag(x.S, () => true, node => {
                     node.elems.forEach(e => rec(e))
                 })
             } else if (x.t == 'str') {
-                if (sync9_space_dag_prune(x.S, has_everyone_whos_seen_a_seen_b, seen_nodes)) did_something = true
+                if (sync9_space_dag_prune(x.S, has_everyone_whos_seen_a_seen_b, seen_versions)) did_something = true
             }
         }
     }
@@ -1127,7 +1202,7 @@ function sync9_prune(x, has_everyone_whos_seen_a_seen_b, has_everyone_whos_seen_
         if (visited[vid]) return
         visited[vid] = true
         Object.keys(x.T[vid]).forEach(pid => {
-            if (has_everyone_whos_seen_a_seen_b_2(pid, vid) && !seen_nodes[pid]) {
+            if (has_everyone_whos_seen_a_seen_b_2(pid, vid) && !seen_versions[pid]) {
                 delete_us[pid] = true
             }
             f(pid)
@@ -1160,7 +1235,7 @@ function sync9_prune(x, has_everyone_whos_seen_a_seen_b, has_everyone_whos_seen_
     return delete_us
 }
 
-function sync9_space_dag_prune(S, has_everyone_whos_seen_a_seen_b, seen_nodes) {
+function sync9_space_dag_prune(S, has_everyone_whos_seen_a_seen_b, seen_versions) {
     function set_nnnext(node, next) {
         while (node.next) node = node.next
         node.next = next
@@ -1212,7 +1287,7 @@ function sync9_space_dag_prune(S, has_everyone_whos_seen_a_seen_b, seen_nodes) {
             delete node.gash
             return true
         } else {
-            Object.assign(seen_nodes, node.deleted_by)
+            Object.assign(seen_versions, node.deleted_by)
         }
         
         if (next && !next.nexts[0] && (Object.keys(next.deleted_by).some(k => has_everyone_whos_seen_a_seen_b(vid, k)) || next.elems.length == 0)) {
@@ -1233,7 +1308,7 @@ function sync9_space_dag_prune(S, has_everyone_whos_seen_a_seen_b, seen_nodes) {
     }
     var did_something = false
     sync9_trav_space_dag(S, () => true, (node, offset, has_nexts, prev, vid) => {
-        if (!prev) seen_nodes[vid] = true
+        if (!prev) seen_versions[vid] = true
         while (process_node(node, offset, vid, prev)) {
             did_something = true
         }
