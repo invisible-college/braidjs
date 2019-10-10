@@ -72,7 +72,7 @@ function sync9_create_peer(p_funcs) {
         self.s9.leaves = {root: true}
     }
     
-    self.uid = sync9_guid()
+    self.id = sync9_guid()
     
     self.peers = {}
     self.fissures = {}
@@ -86,7 +86,7 @@ function sync9_create_peer(p_funcs) {
     self.connect = (pid, alpha) => {
         if (alpha) {
             self.peers[pid] = {conn_id: sync9_guid()}
-            p_funcs.get(pid, self.uid, self.peers[pid].conn_id)
+            p_funcs.get(pid, self.id, self.peers[pid].conn_id)
         } else {
             self.peers[pid] = {}
         }
@@ -108,7 +108,7 @@ function sync9_create_peer(p_funcs) {
             })
             
             self.fissure(pid, {
-                a: self.uid,
+                a: self.id,
                 b: self.peers[pid].b,
                 conn_id: self.peers[pid].conn_id,
                 versions,
@@ -133,9 +133,9 @@ function sync9_create_peer(p_funcs) {
                 if (p != pid) p_funcs.fissure(p, fissure)
             })
             
-            if (fissure.b == self.uid) {
+            if (fissure.b == self.id) {
                 self.fissure(null, {
-                    a: self.uid,
+                    a: self.id,
                     b: fissure.a,
                     conn_id: fissure.conn_id,
                     versions: fissure.versions,
@@ -149,7 +149,7 @@ function sync9_create_peer(p_funcs) {
         self.peers[pid].b = uid
         if (conn_id) {
             self.peers[pid].conn_id = conn_id
-            p_funcs.get(pid, self.uid)
+            p_funcs.get(pid, self.id)
         }
         var versions = sync9_extract_versions(self.s9, x => x == 'root')
         var fissures = Object.values(self.fissures)
@@ -197,8 +197,8 @@ function sync9_create_peer(p_funcs) {
                 self.fissures[key] = f
 
                 // Generate a fissure if we are the other side of one
-                if (f.b == self.uid) gen_fissures.push({
-                    a: self.uid,
+                if (f.b == self.id) gen_fissures.push({
+                    a: self.id,
                     b: f.a,
                     conn_id: f.conn_id,
                     versions: f.versions,
