@@ -83,18 +83,18 @@ function sync9_create_peer(p_funcs) {
     self.valid_local = {}
     self.joiners = {}
     
-    self.connect = (pid, alpha) => {
+    self.connect = (sndr, alpha) => {
         if (alpha) {
-            self.peers[pid] = {conn_id: sync9_guid()}
-            p_funcs.get(pid, self.id, self.peers[pid].conn_id)
+            self.peers[sndr] = {conn_id: sync9_guid()}
+            p_funcs.get(sndr, self.id, self.peers[sndr].conn_id)
         } else {
-            self.peers[pid] = {}
+            self.peers[sndr] = {}
         }
     }
     
-    self.disconnect = pid => {
-        if (!self.peers[pid]) return
-        if (self.peers[pid].b) {
+    self.disconnect = sndr => {
+        if (!self.peers[sndr]) return
+        if (self.peers[sndr].b) {
             var versions = {}
             var ack_versions = sync9_get_ancestors(self.s9, self.ack_leaves)
             Object.keys(self.s9.T).forEach(v => {
@@ -107,22 +107,29 @@ function sync9_create_peer(p_funcs) {
                 fissure_parents[x] = true
             })
             
-            self.fissure(pid, {
+            self.fissure(sndr, {
                 a: self.id,
-                b: self.peers[pid].b,
-                conn_id: self.peers[pid].conn_id,
+                b: self.peers[sndr].b,
+                conn_id: self.peers[sndr].conn_id,
                 versions,
                 parents: fissure_parents
             })
         }
-        delete self.peers[pid]
+        delete self.peers[sndr]
     }
     
+    // "True peers" are the ones where we have a complete connection going.
+    // Because it's possible that we could have created half a connection and
+    // sent some stuff over the network before it was actually there.
+    //
+    // So they are "true" because this is what would actually exist in a real
+    // network, vs. the simulation.  In this simulation, there is a
+    // "connection" that might not really exist.
     function get_true_peers() {
         return Object.entries(self.peers).filter(x => x[1].b).map(x => x[0])
     }
     
-    self.fissure = (pid, fissure) => {
+    self.fissure = (sndr, fissure) => {
         var key = fissure.a + ':' + fissure.b + ':' + fissure.conn_id
         if (!self.fissures[key]) {
             self.fissures[key] = fissure
@@ -130,7 +137,7 @@ function sync9_create_peer(p_funcs) {
             self.seen_local = {}
             
             get_true_peers().forEach(p => {
-                if (p != pid) p_funcs.fissure(p, fissure)
+                if (p != sndr) p_funcs.fissure(p, fissure)
             })
             
             if (fissure.b == self.id) {
@@ -145,18 +152,21 @@ function sync9_create_peer(p_funcs) {
         }
     }
     
-    self.get = (pid, uid, conn_id) => {
-        self.peers[pid].b = uid
+    // Right now, the get sends the sender_id.  But perhaps this should happen
+    // when creating the connection.
+    self.get = (sndr, sender_id, conn_id) => {
+        // sender_id happens to == sndr
+        self.peers[sndr].b = sender_id
         if (conn_id) {
-            self.peers[pid].conn_id = conn_id
-            p_funcs.get(pid, self.id)
+            self.peers[sndr].conn_id = conn_id
+            p_funcs.get(sndr, self.id)
         }
         var versions = sync9_extract_versions(self.s9, x => x == 'root')
         var fissures = Object.values(self.fissures)
-        p_funcs.set_multi(pid, versions, fissures)
+        p_funcs.set_multi(sndr, versions, fissures)
     }
     
-    self.set_multi = (pid, versions, fissures, conn_leaves, min_leaves) => {
+    self.set_multi = (sndr, versions, fissures, conn_leaves, min_leaves) => {
         var new_versions = []    // Versions I haven't seen yet, so we'll
                                  // forward to other peers
         var versions_T = {}      // This helps deal with receiving versions
@@ -258,7 +268,7 @@ function sync9_create_peer(p_funcs) {
         // Now broadcast the set_multi to all of our peers
         if (new_versions.length > 0 || new_fissures.length > 0) {
             get_true_peers().forEach(p => {
-                if (p != pid) p_funcs.set_multi(p, new_versions, new_fissures, conn_leaves, min_leaves)
+                if (p != sndr) p_funcs.set_multi(p, new_versions, new_fissures, conn_leaves, min_leaves)
             })
         }
 
@@ -302,14 +312,14 @@ function sync9_create_peer(p_funcs) {
     }
     
     // This is like local_set, but does not send the patch back to the
-    // originating peer `pid`.
+    // originating peer `sndr`.
     // This also counts the set as an ack from that peer. (The "seen_local" count.)
-    self.set = (pid, vid, parents, patches, joiner_num) => {
+    self.set = (sndr, vid, parents, patches, joiner_num) => {
         if (!self.s9.T[vid] || (joiner_num > self.joiners[vid])) {
             sync9_add_version(self.s9, vid, parents, patches)
             
             var ps = get_true_peers()
-            self.seen_local[vid] = {origin: pid, count: ps.length - 1}
+            self.seen_local[vid] = {origin: sndr, count: ps.length - 1}
             self.valid_local[vid] = {origin: null, count: 0}
             // Now call any handlers, which add to valid.count
 
@@ -318,7 +328,7 @@ function sync9_create_peer(p_funcs) {
 
             if (joiner_num) self.joiners[vid] = joiner_num
             ps.forEach(p => {
-                if (p != pid)
+                if (p != sndr)
                     p_funcs.set(p, vid, parents, patches, joiner_num)
             })
         } else if (self.seen_local[vid] && (joiner_num == self.joiners[vid]))
@@ -327,7 +337,7 @@ function sync9_create_peer(p_funcs) {
         check_ack_count(vid)
     }
     
-    self.ack = (pid, vid, joiner_num) => {
+    self.ack = (sndr, vid, joiner_num) => {
         if (self.seen_local[vid] && (joiner_num == self.joiners[vid])) {
             self.seen_local[vid].count--
             check_ack_count(vid)
@@ -347,7 +357,7 @@ function sync9_create_peer(p_funcs) {
         }
     }
     
-    self.full_ack = (pid, vid) => {
+    self.full_ack = (sndr, vid) => {
         if (!self.s9.T[vid]) return
         
         var ancs = sync9_get_ancestors(self.s9, self.conn_leaves)
@@ -358,11 +368,11 @@ function sync9_create_peer(p_funcs) {
         
         add_full_ack_leaf(vid)
         get_true_peers().forEach(p => {
-            if (p != pid) p_funcs.full_ack(p, vid)
+            if (p != sndr) p_funcs.full_ack(p, vid)
         })
     }
     
-    self.local_valid_ack = (pid, vid) => {
+    self.local_valid_ack = (sndr, vid) => {
         if (self.valid_local[vid]) {
             self.valid_local[vid].count--
             check_valid_count(vid)
@@ -381,10 +391,10 @@ function sync9_create_peer(p_funcs) {
             }
         }
     }
-    self.global_valid_ack = (pid, vid) => {
+    self.global_valid_ack = (sndr, vid) => {
         add_global_valid_ack_leaf(vid)
         get_true_peers().forEach(p => {
-            if (p != pid) p_funcs.global_valid_ack(p, vid)
+            if (p != sndr) p_funcs.global_valid_ack(p, vid)
         })
     }
 
