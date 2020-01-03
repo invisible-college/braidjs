@@ -1,3 +1,5 @@
+Note: current development is happening in the [braid-work/toomim-braidjs](https://github.com/braid-work/toomim-braidjs) repo.
+
 # Welcome to the Braid!
 
 These libraries upgrade your website to the [braid protocol](https://tools.ietf.org/html/draft-toomim-braid-00), which adds *synchronization* to HTTP.
